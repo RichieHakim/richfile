@@ -57,6 +57,6 @@ setup(
 
     packages=['richfile'],
 
-    install_requires=list(deps_all.values()),
+    install_requires=list(deps_all_dict.values()),
     # extras_require=,
 )
