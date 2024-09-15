@@ -1,6 +1,5 @@
 # richfile
-A better way to save complex datastructures
-
+A more natural approach to saving hierarchical data structures
 
 ## TODO:
 - Tests
