@@ -30,13 +30,14 @@ jobs:
       matrix:
         platform: [
           # ubuntu-latest,
+          ubuntu-24.04,
           ubuntu-22.04,
           ubuntu-20.04,
           # # windows-latest,
           windows-2022,
           windows-2019,
           # # macos-latest,
-          macos-12,
+          macos-14,
           # macos-11.0,  ## eva-decord fails on macos-11
           # macos-10.15,
         ]
@@ -44,7 +45,7 @@ jobs:
           # "3.9",
           # "3.10",
           "3.11",
-          # "3.12",
+          "3.12",
         ]
         # extra: [
         #   core_cv2Headless,
