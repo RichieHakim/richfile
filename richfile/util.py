@@ -392,6 +392,7 @@ def save_container(
             elif obj_type == "dict_item":
                 name_element = f"{['key', 'value'][idx]}.{props['suffix']}"
 
+        _check_filename_safety(name=name_element, warn=True, raise_error=False)
         path_element = str(Path(path) / name_element)  ## Make path
         save_object(
             obj=element,
@@ -421,6 +422,20 @@ def save_container(
         name_metadata=FILENAME_METADATA,
         overwrite=overwrite,
     )
+
+
+def _check_filename_safety(name: str, warn: bool = True, raise_error: bool = False) -> None:
+    """
+    Checks if a filename is safe to use.
+    """
+    issue = list(set(list(name)) & set(["/", "\\", ":", "*", "?", "\"", "<", ">", "|"]))
+    n_issues = len(issue)
+
+    if n_issues > 0:
+        if warn:
+            warnings.warn(f"Filename contains invalid character: {issue}. Name: {name}")
+        if raise_error:
+            raise ValueError(f"Filename contains invalid character: {issue}. Name: {name}")
 
 
 def _prepare_save_path(path: Union[str, Path], overwrite: bool = False, mkdir: bool = True) -> None:
@@ -850,7 +865,7 @@ class RichFile:
     
     def __repr__(self):
         self.view_tree()
-        return f"RichFileHandler(path={self.path}, check={self.check}), params_load={self.params_load}), params_save={self.params_save})"
+        return f"RichFileHandler(path={self.path}, check={self.check}, params_load={self.params_load}, params_save={self.params_save})"
     
     ## Item retrieval by key or index
     def __getitem__(self, key):

@@ -83,10 +83,6 @@ TYPE_LOOKUP = {
 VERSIONS_SUPPORTED = {
     "richfile": [">=0", "<1",],
     "python": [">=3", "<4",],
-    "numpy": [">=1", "<3",],
-    "scipy": [">=1", "<2",],
-    "pandas": [">=1", "<3",],
-    "PIL": [">=6", "<12",],
 }
 
 #################
@@ -386,4 +382,5 @@ def _check_function_args(func: Callable, args: List[str]):
     if not all([param in sig.parameters for param in args]):
         raise ValueError(f"Function {func.__name__} does not accept the correct arguments.")
 
-[_check_function_args(func["function_load"], ["path",]) for func in TYPE_LOOKUP.values()]
+[_check_function_args(func["function_load"], ["path",])        for func in TYPE_LOOKUP.values()]
+[_check_function_args(func["function_save"], ["obj", "path",]) for func in TYPE_LOOKUP.values()]
