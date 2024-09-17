@@ -132,7 +132,7 @@ Viewing tree structure of richfile at path: ~/path/data.richfile (dict)
 - [x] Examples
 - [x] Readme
 - [ ] License
-- [ ] PyPi
+- [x] PyPi
 - [x] ~~Hashing~~
 - [x] ~~Item assignment (safely)~~
 - [x] Custom saving/loading functions
