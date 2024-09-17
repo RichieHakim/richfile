@@ -1,3 +1,4 @@
 ## Required
 numpy
 scipy
+pandas

@@ -18,7 +18,7 @@ The system is based on the following principles:
       Dict items are saved as folders containing 2 elements.
 - There is a single metadata file for each folder describing the properties of
   each element in the folder
-    - The metadata file is a JSON file named "metadata.richfile" and contains
+    - The metadata file is a JSON file named ".metadata.richfile" and contains
       the following items:
         - "elements": a dictionary with keys that are the names of the files /
           folders in the directory and values that are dictionaries with the
@@ -75,26 +75,21 @@ from typing import Any, Dict, List, Optional, Tuple, Union, Callable
 from pathlib import Path
 import json
 import packaging
+import packaging.version
+import packaging.specifiers
 import warnings
 import functools
 import importlib.metadata
 import platform
 import copy
+import inspect
 
-import numpy as np
-import scipy.sparse
+from . import saving_loading_functions as slf
 
 
 VERSION_RICHFILE = "0.1.0"
-FILENAME_METADATA = "metadata.richfile"
+FILENAME_METADATA = ".metadata.richfile"
 JSON_INDENT = 4
-
-VERSIONS_SUPPORTED = {
-    "richfile": [">=0", "<1",],
-    "python": [">=3", "<4",],
-    "numpy": [">=1", "<3",],
-    "scipy": [">=1", "<2",],
-}
 
 REQUIREMENTS = {
     ## Required top-level keys for the metadata file
@@ -122,20 +117,61 @@ REQUIREMENTS = {
 }
 
 
-
 ####################################################################################################
 #################################### LOADING FUNCTIONS #############################################
 ####################################################################################################
 
+def load_element(
+    path: Union[str, Path],
+    metadata: Dict,
+    type_lookup: Dict,
+    check: bool = True,
+) -> Any:
+    """
+    Loads an element from the given path.
+    """
+    ## Elements can be either folders or files. The metadata determines how to load them.
+    ### Go through a switch-case based on the "type" and possibly "library" and "version" of the element.
+    if check:
+        if not Path(path).exists():
+            raise FileNotFoundError(f"Path {path} not found.")
+        if not metadata["type"] in type_lookup:
+            raise ValueError(f"Type {metadata['type']} not supported.")
+
+    _prepare_element_loading(
+        path=path,
+        metadata=metadata,
+        check=check,
+    )
+
+    ## Get function_load
+    function_load = type_lookup[metadata["type"]]["function_load"]
+    ## Check parameters accepted by function: path, type_lookup, metadata, check
+    sig = inspect.signature(function_load)
+    args_available = {
+        "path": path,
+        "metadata": metadata,
+        "type_lookup": type_lookup,
+        "check": check,
+    }
+    argnames = list(set(sig.parameters.keys()) & set(args_available.keys()))
+    kwargs_function = {argname: args_available[argname] for argname in argnames}
+
+    return function_load(
+        **kwargs_function,
+    )
+
+
 def load_folder(
     path: Union[str, Path],
+    type_lookup: Dict,
     check: bool = True,
     **kwargs,
 ) -> Any:
     """
     Loads the folder from the given path. Used for types: list, tuple, set, dict.
     """
-    metadata = load_metadata(path_dir=path, name_metadata=FILENAME_METADATA, check=check)
+    metadata = load_folder_metadata(path_dir=path, name_metadata=FILENAME_METADATA, check=check)
 
     if check:
         names_path_elements = [p.name for p in Path(path).iterdir() if p.name != FILENAME_METADATA]
@@ -145,17 +181,13 @@ def load_folder(
             raise ValueError("Indices in metadata are not unique.")
         if metadata["library"] != "python":
             raise ValueError("Only 'python' library supported for container types.")
-        if not is_version_compatible(metadata["version"], VERSIONS_SUPPORTED["python"]):
+        if not is_version_compatible(metadata["version"], slf.VERSIONS_SUPPORTED["python"]):
             raise ValueError(f"Python version {metadata['version']} not supported.")
         
-    # Map indices to names
-    indices_and_names_meta = {value["index"]: name for name, value in metadata["elements"].items()}
-    indices_meta_sorted = sorted(indices_and_names_meta.keys())
-    names_meta_sorted = [indices_and_names_meta[index] for index in indices_meta_sorted]
+    ## Sort the element names by their index
+    names_meta_sorted = _sort_element_names_by_index(metadata=metadata, check=check)
 
     if check:
-        if indices_meta_sorted != list(range(len(indices_meta_sorted))):
-            raise ValueError("Indices in metadata are not consecutive integers starting from zero.")
         # Check that all elements in metadata are present in the folder and vice versa
         if not all(name in names_path_elements for name in names_meta_sorted):
             missing_elements = set(names_meta_sorted) - set(names_path_elements)
@@ -168,6 +200,7 @@ def load_folder(
     elements = [load_element(
         path=str(Path(path) / name),
         metadata=metadata["elements"][name],
+        type_lookup=type_lookup,
         check=check,
     ) for name in names_meta_sorted]
     
@@ -182,7 +215,7 @@ def load_folder(
         if check:
             if not all(isinstance(element, DictItem) for element in elements):
                 raise TypeError("All elements in a dict must be of type DictItem.")
-        elements = {element.key: element.value for element in elements}
+        elements = {element.key: element.value for element in elements}  ## Unpack the DictItems
     elif metadata["type"] == "dict_item":
         ## Make sure that there are exactly 2 elements
         if check:
@@ -195,7 +228,20 @@ def load_folder(
     return elements
 
 
-def load_metadata(
+def _sort_element_names_by_index(metadata: Dict, check: bool = True) -> List[str]:
+    """
+    Sorts the element names in the metadata by their index.
+    """
+    indices_and_names_meta = {value["index"]: name for name, value in metadata["elements"].items()}
+    indices_meta_sorted = sorted(indices_and_names_meta.keys())
+    names_meta_sorted = [indices_and_names_meta[index] for index in indices_meta_sorted]
+    if check:
+        if indices_meta_sorted != list(range(len(indices_meta_sorted))):
+            raise ValueError("Indices in metadata are not consecutive integers starting from zero.")
+    return names_meta_sorted
+
+
+def load_folder_metadata(
     path_dir: Union[str, Path],
     name_metadata: str = FILENAME_METADATA,
     check: bool = True,
@@ -218,7 +264,7 @@ def load_metadata(
         if missing_keys:
             raise KeyError(f"Metadata is missing required keys: {missing_keys}")
         # Check version
-        if not is_version_compatible(metadata["version_richfile"], VERSIONS_SUPPORTED["richfile"]):
+        if not is_version_compatible(metadata["version_richfile"], slf.VERSIONS_SUPPORTED["richfile"]):
             raise ValueError(f"RichFile version {metadata['version_richfile']} not supported.")
         for element_name, meta_element in metadata["elements"].items():
             missing_keys = set(REQUIREMENTS["keys_element"]) - set(meta_element.keys())
@@ -226,35 +272,6 @@ def load_metadata(
                 raise KeyError(f"Element '{element_name}' is missing keys: {missing_keys}")
 
     return metadata
-
-
-def load_element(
-    path: Union[str, Path],
-    metadata: Dict,
-    check: bool = True,
-) -> Any:
-    """
-    Loads an element from the given path.
-    """
-    ## Elements can be either folders or files. The metadata determines how to load them.
-    ### Go through a switch-case based on the "type" and possibly "library" and "version" of the element.
-    if check:
-        if not Path(path).exists():
-            raise FileNotFoundError(f"Path {path} not found.")
-        if not metadata["type"] in TYPE_LOOKUP:
-            raise ValueError(f"Type {metadata['type']} not supported.")
-
-    _prepare_element_loading(
-        path=path,
-        metadata=metadata,
-        check=check,
-    )
-
-    return TYPE_LOOKUP[metadata["type"]]["function_load"](
-        path=path,
-        # metadata=metadata,
-        # check=check,
-    )
 
 
 def _prepare_element_loading(
@@ -266,29 +283,11 @@ def _prepare_element_loading(
     Performs checks and preparations for loading a file.
     """
     if check:
-        if not is_version_compatible(metadata["version"], VERSIONS_SUPPORTED[metadata["library"]]):
+        if not is_version_compatible(metadata["version"], slf.VERSIONS_SUPPORTED[metadata["library"]]):
             raise ValueError(f"Version {metadata['version']} not supported.")
         ## Check that path exists as either a file or a directory
         if not Path(path).exists():
             raise FileNotFoundError(f"Path {path} not found.")            
-
-def load_npy_array(
-    path: Union[str, Path],
-    **kwargs,
-) -> np.ndarray:
-    """
-    Loads an array from the given path.
-    """    
-    return np.load(path, **kwargs)
-
-def load_sparse_array(
-    path: Union[str, Path],
-    **kwargs,
-) -> scipy.sparse.csr_matrix:
-    """
-    Loads a sparse array from the given path.
-    """        
-    return scipy.sparse.load_npz(path, **kwargs)
 
 def load_json(
     path: Union[str, Path],
@@ -319,63 +318,56 @@ def load_None(path: Union[str, Path], **kwargs) -> None:
 #################################### SAVING FUNCTIONS ##############################################
 ####################################################################################################
 
-def _check_save_path(path: Union[str, Path], overwrite: bool = False, mkdir: bool = True) -> None:
-    if Path(path).exists() and not overwrite:
-        raise FileExistsError(f"Path already exists: {path}.")
-    if mkdir:
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
 
 def save_object(
     obj: Any,
     path: Union[str, Path],
+    type_lookup: Dict,
     check: bool = True,
     overwrite: bool = False,
+    name_dict_items: bool = True,
 ) -> None:
     """
     Saves an object to the given directory in the RichFile format.
     """
     # Determine the type of the object and save accordingly
-    type_object, props = _get_obj_properties(obj=obj)
+    type_object, props = _get_obj_properties(obj=obj, type_lookup=type_lookup)
 
+    _prepare_save_path(path=path, overwrite=overwrite, mkdir=True)
     if check:
-        _check_save_path(path, overwrite)
         library_version = _get_library_version(props["library"])
-        if not is_version_compatible(library_version, VERSIONS_SUPPORTED[props["library"]]):
-            raise ValueError(f"Library {props['library']} version {library_version} not supported.")        
+        if props["library"] in slf.VERSIONS_SUPPORTED:
+            if not is_version_compatible(library_version, slf.VERSIONS_SUPPORTED[props["library"]]):
+                raise ValueError(f"Library {props['library']} version {library_version} not supported.")        
 
-    props["function_save"](
-        obj=obj,
-        path=path,
-        obj_type=type_object,
-        check=check,
-        overwrite=overwrite,
+    ## Get function_save
+    function_save = props["function_save"]
+    ## Check parameters accepted by function: obj, path, type_lookup, obj_type, check, overwrite, name_dict_items
+    sig = inspect.signature(function_save)
+    args_available = {
+        "obj": obj,
+        "path": path,
+        "type_lookup": type_lookup,
+        "obj_type": type_object,
+        "check": check,
+        "overwrite": overwrite,
+        "name_dict_items": name_dict_items,
+    }
+    argnames = list(set(sig.parameters.keys()) & set(args_available.keys()))
+    kwargs_function = {argname: args_available[argname] for argname in argnames}
+
+    function_save(
+        **kwargs_function,
     )
-
-def save_metadata(
-    metadata: Dict,
-    path_dir: Union[str, Path],
-    check: bool = True,
-    name_metadata: str = FILENAME_METADATA,
-    overwrite: bool = False,
-) -> None:
-    """
-    Saves the metadata dictionary to a file in the given directory.
-    """
-    Path(path_dir).mkdir(parents=True, exist_ok=True)
-    if check:
-        ## There should not be a metadata file already present if overwrite is False
-        if not overwrite and (Path(path_dir) / name_metadata).exists():
-            raise FileExistsError(f"Metadata file {name_metadata} already exists in directory {path_dir}.")
-
-    with open(str(Path(path_dir) / name_metadata), "w") as f:
-        json.dump(metadata, f, indent=JSON_INDENT)
 
 def save_container(
     obj: Union[List, Tuple, set, dict, 'DictItem'],
     path: Union[str, Path],
     obj_type: str,
+    type_lookup: Dict,
     check: bool = True,
     overwrite: bool = False,
+    name_dict_items: bool = True,
 ) -> None:
     """
     Saves a list, tuple, or set to the given directory.
@@ -385,17 +377,25 @@ def save_container(
 
     metadata_elements = {}
     for idx, element in enumerate(obj):
-        type_object, props = _get_obj_properties(element)
+        type_element, props = _get_obj_properties(obj=element, type_lookup=type_lookup)
         name_element = f"{idx}.{props['suffix']}"  ## Make name the index and add suffix
+        if name_dict_items:
+            if type_element == "dict_item":
+                if isinstance(element.key, str):
+                    name_element = f"{element.key}.{props['suffix']}"
+            elif obj_type == "dict_item":
+                name_element = f"{['key', 'value'][idx]}.{props['suffix']}"
+
         path_element = str(Path(path) / name_element)  ## Make path
         save_object(
             obj=element,
             path=path_element,
             check=check,
             overwrite=overwrite,
+            type_lookup=type_lookup,
         )
         metadata_elements[name_element] = {
-            "type": type_object,
+            "type": type_element,
             "library": props["library"],
             "version": _get_library_version(library=props["library"]),
             "index": idx,
@@ -416,33 +416,39 @@ def save_container(
         overwrite=overwrite,
     )
 
+
+def _prepare_save_path(path: Union[str, Path], overwrite: bool = False, mkdir: bool = True) -> None:
+    if Path(path).exists() and not overwrite:
+        raise FileExistsError(f"Path already exists: {path}.")
+    if mkdir:
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+
+def save_metadata(
+    metadata: Dict,
+    path_dir: Union[str, Path],
+    check: bool = True,
+    name_metadata: str = FILENAME_METADATA,
+    overwrite: bool = False,
+) -> None:
+    """
+    Saves the metadata dictionary to a file in the given directory.
+    """
+    Path(path_dir).mkdir(parents=True, exist_ok=True)
+    if check:
+        ## There should not be a metadata file already present if overwrite is False
+        if not overwrite and (Path(path_dir) / name_metadata).exists():
+            raise FileExistsError(f"Metadata file {name_metadata} already exists in directory {path_dir}.")
+
+    with open(str(Path(path_dir) / name_metadata), "w") as f:
+        json.dump(metadata, f, indent=JSON_INDENT)
+
+
 class DictItem:
     def __init__(self, key, value):
         self.key = key
         self.value = value
     def __iter__(self):
         return iter([self.key, self.value])
-    
-
-def save_npy_array(
-    obj: np.ndarray,
-    path: Union[str, Path],
-    **kwargs,
-) -> None:
-    """
-    Saves a NumPy array to the given path.
-    """
-    np.save(path, obj)
-
-def save_sparse_array(
-    obj: scipy.sparse.spmatrix,
-    path: Union[str, Path],
-    **kwargs,
-) -> None:
-    """
-    Saves a SciPy sparse matrix to the given path.
-    """
-    scipy.sparse.save_npz(path, obj)
 
 def save_json(
     obj: Any,
@@ -468,29 +474,19 @@ def _get_library_version(library: str) -> str:
         try:
             return importlib.metadata.version(library)
         except importlib.metadata.PackageNotFoundError:
-            raise ValueError(f"Library {library} not found.")
+            try:
+                ## Try to import the library and get the version from the __version__ attribute
+                return importlib.import_module(library).__version__
+            except AttributeError as e:
+                raise ValueError(f"Library {library} not found. Error: {e}")
+        except ImportError:
+            raise ValueError(f"Library {library} not found. Error: {e}")
     
 def _get_python_version() -> str:
     """
     Returns the Python version as a string.
     """
     return platform.python_version()
-
-def _get_obj_properties(obj: Any) -> Tuple[str, Dict]:
-    """
-    Returns the richfile type and properties of the object.
-    """
-    ## Go through the TYPE_LOOKUP dictionary to find the type of the object. isinstance checks for inherited classes as well.
-    ### Check with 'is' first to avoid inheritance issues (ex. bool is a subclass of int)
-    for type_, props in TYPE_LOOKUP.items():   
-        if type(obj) is props["object_type"]:
-            return type_, props
-    ### If 'is' check fails, use isinstance which checks for inherited classes as well.
-    for type_, props in TYPE_LOOKUP.items():
-        if isinstance(obj, props["object_type"]):
-            return type_, props
-    raise TypeError(f"Type {type(obj)} not supported.")
-
 
 def is_version_compatible(version: str, rules: List[str]) -> bool:
     """
@@ -514,119 +510,35 @@ def is_version_compatible(version: str, rules: List[str]) -> bool:
         raise ValueError(f"Invalid version string: {version}")
 
 
-####################################################################################################
-#################################### TYPE LOOKUP ###################################################
-####################################################################################################
-
-
-TYPE_LOOKUP = {
-    "list": {
-        "function_load": load_folder,
-        "function_save": save_container,
-        "object_type":   list,
-        "suffix":        "list",
-        "library":       "python",
-    },
-    "tuple": {
-        "function_load": load_folder,
-        "function_save": save_container,
-        "object_type":   tuple,
-        "suffix":        "tuple",
-        "library":       "python",
-    },
-    "set": {
-        "function_load": load_folder,
-        "function_save": save_container,
-        "object_type":   set,
-        "suffix":        "set",
-        "library":       "python",
-    },
-    "dict": {
-        "function_load": load_folder,
-        "function_save": save_container,
-        "object_type":   dict,
-        "suffix":        "dict",
-        "library":       "python",
-    },
-
-    "dict_item": {
-        "function_load": load_folder,
-        "function_save": save_container,
-        "object_type":   DictItem,
-        "suffix":        "dict_item",
-        "library":       "python",
-    },
-
-    "npy_array": {
-        "function_load": load_npy_array,
-        "function_save": save_npy_array,
-        "object_type":   np.ndarray,
-        "suffix":        "npy",
-        "library":       "numpy",
-    },
-    "scipy_sparse_array":{
-        "function_load": load_sparse_array,
-        "function_save": save_sparse_array,
-        "object_type":   scipy.sparse.spmatrix,
-        "suffix":        "npz",
-        "library":       "scipy",
-    },
-
-    "float": {
-        "function_load": load_float,
-        "function_save": save_json,
-        "object_type":   float,
-        "suffix":       "json",
-        "library":       "python",
-    },
-    "int": {
-        "function_load": load_int,
-        "function_save": save_json,
-        "object_type":   int,
-        "suffix":        "json",
-        "library":       "python",
-    },
-    "str": {
-        "function_load": load_str,
-        "function_save": save_json,
-        "object_type":   str,
-        "suffix":        "json",
-        "library":       "python",
-    },
-    "bool": {
-        "function_load": load_bool,
-        "function_save": save_json,
-        "object_type":   bool,
-        "suffix":        "json",
-        "library":       "python",
-    },
-    "None": {
-        "function_load": load_None,
-        "function_save": save_json,
-        "object_type":   type(None),
-        "suffix":        "json",
-        "library":       "python",
-    },
-}
-
-
-def _check_function_args(func: Callable, args: List[str]):
+def _get_obj_properties(obj: Any, type_lookup: Dict) -> Tuple[str, Dict]:
     """
-    Checks functions called by load_element to make sure they accept the correct
-    arguments.
-
-    Args:
-        func (Callable): 
-            The function to check.
-        args (List[str]): 
-            The arguments that the function should accept
+    Returns the richfile type and properties of the object.
     """
-    import inspect
-    sig = inspect.signature(func)
-    if not all([param in sig.parameters for param in args]):
-        raise ValueError(f"Function {func.__name__} does not accept the correct arguments.")
+    ## Go through the TYPE_LOOKUP dictionary to find the type of the object. isinstance checks for inherited classes as well.
+    ### Check with 'is' first to avoid inheritance issues (ex. bool is a subclass of int)
+    for type_, props in type_lookup.items():   
+        if type(obj) is props["object_type"]:
+            return type_, props
+    ### If 'is' check fails, use isinstance which checks for inherited classes as well.
+    for type_, props in type_lookup.items():
+        if isinstance(obj, props["object_type"]):
+            return type_, props
+    raise TypeError(f"Type {type(obj)} not supported.")
 
-[_check_function_args(func["function_load"], ["path",]) for func in TYPE_LOOKUP.values()]
+def _lookup_richfile_type_from_type(
+    type_: type,
+    type_lookup: Dict,
+) -> str:
+    """
+    Returns the richfile type of the object.
+    """
+    for type_name, props in type_lookup.items():
+        if type_ is props["object_type"]:
+            return type_name
+    for type_name, props in type_lookup.items():
+        if isinstance(type_, props["object_type"]):
+            return type_name
+    raise TypeError(f"Type {type_} not supported.")
 
 
 ####################################################################################################
@@ -647,7 +559,7 @@ class RichFile:
         self.path = path
         self.check = check
 
-        self.type_lookup = copy.deepcopy(TYPE_LOOKUP)
+        self.type_lookup = copy.deepcopy(slf.TYPE_LOOKUP)
         self.params_load = {}
         self.params_save = {}
     
@@ -657,6 +569,7 @@ class RichFile:
         path: Optional[Union[str, Path]] = None, 
         check: Optional[bool] = None, 
         overwrite: Optional[bool] = False,
+        name_dict_items: bool = True,
     ) -> None:
         path = self.path if path is None else path
         check = self.check if check is None else check
@@ -669,41 +582,68 @@ class RichFile:
             check=check, 
             overwrite=overwrite, 
             type_lookup=self.type_lookup,
+            name_dict_items=name_dict_items,
         )
+        return self
     
     def load(
         self, 
         path: Optional[Union[str, Path]] = None, 
+        type_lookup: Optional[Dict] = None,
         check: Optional[bool] = None,
     ) -> Any:
         path = self.path if path is None else path
+        type_lookup = self.type_lookup if type_lookup is None else type_lookup
         check = self.check if check is None else check
         if (path is None) or (not isinstance(check, bool)):
             raise ValueError("`path` [str, Path] and `check` [bool] must be specified.")
         
-        return load_folder(
-            path, 
-            check=check, 
-            type_lookup=self.type_lookup,
-        )
+        ## Look for a metadata file in the directory
+        ### If there isn't one, assume it is the outer directory and load as a folder
+        if not (Path(path).parent / FILENAME_METADATA).exists():
+            return load_folder(
+                path=path,
+                type_lookup=type_lookup,
+                check=check,
+            )
+        else:
+            metadata_folder = load_folder_metadata(path_dir=str(Path(path).parent), check=check)
+            metadata_element = metadata_folder["elements"][Path(path).name]
+            return load_element(
+                path=path,
+                metadata=metadata_element,
+                type_lookup=type_lookup,
+                check=check,
+            )
 
-    def set_load_function(self, type_name: str, function: Callable) -> None:
+    def set_load_function(
+        self, 
+        type_: Union[str, type], 
+        function: Callable,
+    ) -> None:
         """
         Sets a custom load function for a specific type.
         """
-        if type_name in self.type_lookup:
-            self.type_lookup[type_name]['function_load'] = function
+        name_type = _lookup_richfile_type_from_type(type_=type_, type_lookup=self.type_lookup) if type(type_) is not str else type_
+            
+        if name_type in self.type_lookup:
+            self.type_lookup[name_type]['function_load'] = function
         else:
-            raise KeyError(f"Type {type_name} not found in type lookup.")
+            raise KeyError(f"Type {name_type} not found in type lookup.")
 
-    def set_save_function(self, type_name: str, function: Callable) -> None:
+    def set_save_function(        self, 
+        type_: Union[str, type], 
+        function: Callable,
+    ) -> None:
         """
         Sets a custom save function for a specific type.
         """
-        if type_name in self.type_lookup:
-            self.type_lookup[type_name]['function_save'] = function
+        name_type = _lookup_richfile_type_from_type(type_=type_, type_lookup=self.type_lookup) if type(type_) is not str else type_
+
+        if name_type in self.type_lookup:
+            self.type_lookup[name_type]['function_save'] = function
         else:
-            raise KeyError(f"Type {type_name} not found in type lookup.")
+            raise KeyError(f"Type {name_type} not found in type lookup.")
 
     def register_type(
         self, 
@@ -725,46 +665,58 @@ class RichFile:
             'library': library,
         }
 
-    def set_load_params(self, type_name: str, params: Dict) -> None:
+    def set_load_kwargs(
+        self, 
+        type_: Union[str, type], 
+        **kwargs,
+    ) -> None:
         """
         Sets additional parameters for the load function of a specific type.
         """
+        name_type = _lookup_richfile_type_from_type(type_=type_, type_lookup=self.type_lookup) if type(type_) is not str else type_
+
         ## Partial the function with the parameters
-        if type_name in self.type_lookup:
-            self.type_lookup[type_name]['function_load'] = functools.partial(
-                self.type_lookup[type_name]['function_load'],
-                **params,
+        if name_type in self.type_lookup:
+            self.type_lookup[name_type]['function_load'] = functools.partial(
+                self.type_lookup[name_type]['function_load'],
+                **kwargs,
             )
         else:
-            raise KeyError(f"Type {type_name} not found in type lookup.")
+            raise KeyError(f"Type {name_type} not found in type lookup.")
         
-        self.params_load[type_name] = params
+        self.params_load[name_type] = kwargs
 
-    def set_save_params(self, type_name: str, params: Dict) -> None:
+    def set_save_kwargs(
+        self,
+        type_: Union[str, type], 
+        **kwargs,
+    ) -> None:
         """
         Sets additional parameters for the save function of a specific type.
         """
+        name_type = _lookup_richfile_type_from_type(type_=type_, type_lookup=self.type_lookup) if type(type_) is not str else type_
+
         ## Partial the function with the parameters
-        if type_name in self.type_lookup:
-            self.type_lookup[type_name]['function_save'] = functools.partial(
-                self.type_lookup[type_name]['function_save'],
-                **params,
+        if name_type in self.type_lookup:
+            self.type_lookup[name_type]['function_save'] = functools.partial(
+                self.type_lookup[name_type]['function_save'],
+                **kwargs,
             )
         else:
-            raise KeyError(f"Type {type_name} not found in type lookup.")
-        self.params_save[type_name] = params
+            raise KeyError(f"Type {name_type} not found in type lookup.")
+        self.params_save[name_type] = kwargs
 
     def get_metadata(self, path_dir: Union[str, Path]) -> Dict:
         """
         Retrieves the metadata from the specified directory.
         """
-        return load_metadata(path_dir)
+        return load_folder_metadata(path_dir=path_dir, check=self.check)
 
     def list_elements(self, path_dir: Union[str, Path]) -> List[str]:
         """
         Lists the elements in the specified directory.
         """
-        metadata = self.get_metadata(path_dir)
+        metadata = load_folder_metadata(path_dir=path_dir, check=self.check)
         return list(metadata['elements'].keys())
 
     def get_type_info(self, type_name: str) -> Dict:
@@ -782,18 +734,31 @@ class RichFile:
         if path is None:
             raise ValueError("`path` [str, Path] must be specified.")
         
-        print(f"Viewing tree structure of richfile at path: {path}")
-        
         def _view_tree(path, level=0):
             metadata = self.get_metadata(path)
             for name, value in metadata['elements'].items():
-                print("    " * level + f"{name} ({value['type']})")
+                print("|   " * level + "├── " + f"{name} ({value['type']})")
                 if value['type'] in ["list", "tuple", "set", "dict", "dict_item"]:
                     _view_tree(path=str(Path(path) / name), level=level+1)
+            print("|   " * level)
 
-        _view_tree(path)
+        if Path(path).is_dir():
+            print(f"Viewing tree structure of richfile at path: {path} ({self.get_metadata(path)['type']})")
+            _view_tree(path)
+        elif Path(path).is_file():
+            metadata_folder = load_folder_metadata(path_dir=str(Path(path).parent), check=self.check)
+            name_element = Path(path).name
+            metadata_element = metadata_folder["elements"][name_element]
+            print(f"Viewing element at path: {path} ({metadata_element['type']})")
+        else:
+            raise FileNotFoundError(f"Path {path} not found.")
+            
     
-    def view_tree(self, path: Optional[Union[str, Path]] = None, show_filenames: bool = False) -> None:
+    def view_tree(
+        self, 
+        path: Optional[Union[str, Path]] = None, 
+        show_filenames: bool = False,
+    ) -> None:
         """
         Prints a tree structure of the directory.
         If a dict item has a string key, it will be printed as a key-value pair.
@@ -809,27 +774,38 @@ class RichFile:
             for name, value in metadata['elements'].items():
                 if value['type'] == "dict_item":
                     metadata_item = self.get_metadata(str(Path(path) / name))
-                    names_elements = list(metadata_item['elements'].keys())
-                    name_key = "0.json"
+                    names_meta_sorted = _sort_element_names_by_index(metadata=metadata_item)
                     ## The other element should be the value
-                    if len(names_elements) != 2:
+                    if len(names_meta_sorted) != 2:
                         raise ValueError("DictItem must contain exactly 2 elements: key='0.json' and value=another element.")
-                    name_value = names_elements[1] if names_elements[0] == name_key else names_elements[0]
+                    name_key, name_value = names_meta_sorted
                     metadata_key = metadata_item['elements'][name_key]
                     metadata_value = metadata_item['elements'][name_value]
                     key = load_element(
                         path=str(Path(path) / name / name_key),
                         metadata=metadata_key,
+                        type_lookup=self.type_lookup,
                     )
-                    print("    " * level + f"'{key}': {(name_value if sf else '')}  ({metadata_value['type']})")
+                    print("|    " * level + "├── " + f"'{key}': {(name_value if sf else '')}  ({metadata_value['type']})")
                     if metadata_value['type'] in ["list", "tuple", "set", "dict", "dict_item"]:
                         _view_tree(path=str(Path(path) / name / name_value), level=level+1)
                 elif value['type'] in ["list", "tuple", "set", "dict"]:
-                    print("    " * level + f"{(name if sf else '')}  ({value['type']})")
+                    print("|    " * level + "├── " + f"{(name if sf else '')}  ({value['type']})")
                     _view_tree(path=str(Path(path) / name), level=level+1)
                 else:
-                    print("    " * level + f"{(name if sf else '')}  ({value['type']})")
-        _view_tree(path)
+                    print("|    " * level + "├── " + f"{(name if sf else '')}  ({value['type']})")
+            print("|    " * level)
+
+        if Path(path).is_dir():
+            print(f"Path: {path} ({self.get_metadata(path)['type']})")
+            _view_tree(path)
+        elif Path(path).is_file():
+            metadata_folder = load_folder_metadata(path_dir=str(Path(path).parent), check=self.check)
+            name_element = Path(path).name
+            metadata_element = metadata_folder["elements"][name_element]
+            print(f"Path: {path} ({metadata_element['type']})")
+        else:
+            raise FileNotFoundError(f"Path {path} not found.")
 
     def get_metadata_tree(
         self,
@@ -856,12 +832,21 @@ class RichFile:
                     out["elements"][name] = value
             return out
 
-        return _get_metadata_tree(path)
+        if Path(path).is_dir():
+            return _get_metadata_tree(path)
+        elif Path(path).is_file():
+            metadata_folder = load_folder_metadata(path_dir=str(Path(path).parent), check=self.check)
+            name_element = Path(path).name
+            metadata_element = metadata_folder["elements"][name_element]
+            return metadata_element
+        else:
+            raise FileNotFoundError(f"Path {path} not found.")
     
     def __repr__(self):
-        self.view_directory_tree()
+        self.view_tree()
         return f"RichFileHandler(path={self.path}, check={self.check}), params_load={self.params_load}), params_save={self.params_save})"
     
+    ## Item retrieval by key or index
     def __getitem__(self, key):
         
         ## Load dict items by key
@@ -871,22 +856,29 @@ class RichFile:
             if metadata['type'] != "dict":
                 raise ValueError("Path must be a dict to load by key.")
             ## Find filename matching a dict_item with a str as a key matching the input key
-            for name, value in metadata['elements'].items():
-                if value['type'] == "dict_item":
-                    ## Check if the key is a string by loading the dict_item metadata
-                    metadata_item = self.get_metadata(str(Path(self.path) / name))
-                    if '0.json' not in metadata_item['elements'].keys():
-                        raise ValueError("key: '0.json' not found in dict_item metadata.")
-                    if metadata_item['elements']['0.json']['type'] == "str":
-                        key_loaded = load_element(
-                            path=str(Path(self.path) / name / '0.json'),
-                            metadata=metadata_item['elements']['0.json'],
-                        )
-                        if key_loaded == key:
-                            return self.load(
-                                path=str(Path(self.path) / name),
-                                check=self.check,
-                            ).value
+            names_meta_sorted = _sort_element_names_by_index(metadata=metadata)
+            for name in names_meta_sorted:
+                ## Check if the key is a string by loading the dict_item metadata
+                metadata_item = self.get_metadata(str(Path(self.path) / name))
+                if (not (metadata['elements'][name]['type'] == "dict_item")):
+                    raise ValueError(f"Found element with type {metadata['elements'][name]['type']}. Expected 'dict_item'.")
+                if not (metadata_item['type'] == "dict_item"):
+                    raise ValueError(f"Found element with type {metadata_item['type']}. Expected 'dict_item'.")
+                if not len(metadata_item['elements']) == 2:
+                    raise ValueError("DictItem must contain exactly 2 elements: key and value.")
+                names_meta_sorted_item = _sort_element_names_by_index(metadata=metadata_item)
+                name_key, name_value = names_meta_sorted_item
+                if metadata_item['elements'][name_key]['type'] == "str":
+                    key_loaded = load_element(
+                        path=str(Path(self.path) / name / name_key),
+                        metadata=metadata_item['elements'][name_key],
+                        type_lookup=self.type_lookup,
+                    )
+                    if key_loaded == key:
+                        ## return a RichFile object at the path of the value
+                        out = copy.deepcopy(self)
+                        out.path = str(Path(self.path) / name / name_value)
+                        return out
                         
         ## Load list or tuple items by index
         elif isinstance(key, int):
@@ -897,10 +889,10 @@ class RichFile:
             ## Find filename of the metadata index matching the input key
             for name, value in metadata['elements'].items():
                 if value['index'] == key:
-                    return self.load(
-                        path=str(Path(self.path) / name),
-                        check=self.check,
-                    )
+                    ## return a RichFile object at the path of the element
+                    out = copy.deepcopy(self)
+                    out.path = str(Path(self.path) / name)
+                    return out
         else:
             raise ValueError("__getitem__ only supports str and int keys.")
         
