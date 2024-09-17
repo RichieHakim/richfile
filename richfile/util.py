@@ -87,7 +87,13 @@ import inspect
 from . import saving_loading_functions as slf
 
 
-VERSION_RICHFILE = "0.1.0"
+## load version from __init__.py
+VERSION_RICHFILE = "0.1.1"
+with open(str(Path(__file__).parent / "__init__.py"), "r") as f:
+    for line in f:
+        if line.startswith("__version__"):
+            VERSION_RICHFILE = line.split("=")[1].strip().replace("\"", "").replace("\'", "") ## Get version number
+            break
 FILENAME_METADATA = ".metadata.richfile"
 JSON_INDENT = 4
 
