@@ -60,7 +60,8 @@ or from source:
 pip install git+https://github.com/RichieHakim/richfile.git
 ```
 
-## Example
+## Examples
+Try out the examples in the [demo_notebook.ipynb](https://github.com/RichieHakim/richfile/blob/main/demo_notebook.ipynb) file.
 Turns this Python object:
 ```python
 data = {
@@ -79,7 +80,7 @@ data = {
 }
 ```
 
-Into directory structures like this:
+Into a directory structure that looks like this:
 ```
 Directory structure:
 Viewing tree structure of richfile at path: ~/path/data.richfile (dict)
