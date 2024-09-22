@@ -586,7 +586,7 @@ class RichFile:
         path = str(path)
         with SafeSaver(
             path_target=path,
-            path_temp=path_temp,
+            path_temp=path + '.tmp',
             path_lock=path_temp + ".lock",
             overwrite=overwrite,
             safe_save=safe_save,
