@@ -584,13 +584,18 @@ class RichFile:
         ## Create a lock file specific to the target path
         ### Append the lock suffix to the path (don't replace the suffix)
         path = str(path)
+        path_temp = path + '.tmp'
+        path_lock = path + '.lock'
         with SafeSaver(
             path_target=path,
-            path_temp=path + '.tmp',
-            path_lock=path + '.lock',
+            path_temp=path_temp,
+            path_lock=path_lock,
             overwrite=overwrite,
             safe_save=safe_save,
             delete_temp_on_error=False,
+            timeout_lock=1,
+            force_acquire_lock=overwrite,
+            force_release_lock=True,
         ) as path_temp:
             save_object(
                 obj=obj,
@@ -971,17 +976,36 @@ class FileLock_AutoDeleting(filelock.FileLock):
     file is deleted upon release or when exiting a with statement, preventing
     orphaned lock files.
     """
+    def __init__(
+        self, 
+        lock_file: Union[str, Path], 
+        timeout: Optional[float] = None,
+        force_acquire: bool = False,
+    ):
+        if force_acquire and Path(lock_file).exists():
+            Path(lock_file).unlink()
+
+        self.path_lock = str(lock_file)
+        super().__init__(lock_file=str(lock_file), timeout=timeout)
+
     def release(self, force: bool = False):
         """
         Release the lock and delete the lock file if it exists.
         """
         super().release(force=force)
         try:
-            Path(self.lock_file).unlink()
+            Path(self.path_lock).unlink()
         except FileNotFoundError:
             pass
         except Exception as e:
             warnings.warn(f"Failed to remove lock file: {e}")
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.release(force=False)
+        return False
+    
+    def __del__(self):
+        self.release(force=False)
 
         
 class AtomicSaver:
@@ -1110,10 +1134,34 @@ class SafeSaver(MultiContextManager):
             saving.
         delete_temp_on_error (bool):
             If True, the temporary path will be deleted if an error occurs.
+        safe_save (bool):
+            If True, the save operation will be wrapped in an AtomicSaver. If
+            False and overwrite is True, the target path will be deleted before
+            saving.
+        file_lock (bool):
+            If True, a lock file will be created to prevent concurrent access.
+        timeout_lock (float):
+            The timeout for acquiring the lock file.
+        force_acquire_lock (bool):
+            If True, the lock file will be deleted before acquiring the lock.
+        force_release_lock (bool):
+            If True, the lock file will be deleted before releasing the lock.
 
-    Returns:
-        str:
-            path_temp: The path to the temporary file or directory.
+    Demo:
+        .. code-block:: python
+
+            with SafeSaver(
+                path_target='file.txt', 
+                path_temp='file.txt.tmp',
+                overwrite=True, 
+                safe_save=True, 
+                delete_temp_on_error=False,
+                file_lock=True,
+                timeout_lock=5,
+                force_acquire_lock=False,
+                force_release_lock=False,
+            ):
+                save_object(path_temp, obj)
     """
     def __init__(
         self, 
@@ -1121,8 +1169,12 @@ class SafeSaver(MultiContextManager):
         path_temp: Optional[Union[str, Path]] = None,
         path_lock: Optional[Union[str, Path]] = None,
         overwrite: bool = False,
-        safe_save: bool = True,
         delete_temp_on_error: bool = False,
+        safe_save: bool = True,
+        file_lock: bool = True,
+        timeout_lock: float = 5,
+        force_acquire_lock: bool = False,
+        force_release_lock: bool = False,
     ):
         self.path_target = str(path_target)
         self.path_temp = str(path_temp) if path_temp is not None else self.path_target + '.tmp'
@@ -1132,24 +1184,47 @@ class SafeSaver(MultiContextManager):
         self.safe_save = safe_save
         self.delete_temp_on_error = delete_temp_on_error
 
-        ## Create the lock file
-        self.lock = FileLock_AutoDeleting(self.path_lock)
+        # Overwrite protection
+        if not self.overwrite:
+            if Path(self.path_target).exists():
+                raise FileExistsError(f"Path already exists: {self.path_target} and overwrite is False.")
 
-        ## Create the context managers
-        managers = [self.lock]
+        ## Create managers list
+        managers = []
+
+        ## Create the lock file
+        if file_lock:
+            self.lock = FileLock_AutoDeleting(
+                self.path_lock, 
+                timeout=timeout_lock, 
+                force=force_release_lock, 
+                force_acquire=force_acquire_lock,
+            )
+            managers.append(self.lock)
+
+        ## Create the atomic saver
         if self.safe_save:
-            managers.append(AtomicSaver(
+            self.atomic_saver = AtomicSaver(
                 path_target=self.path_target,
                 path_temp=self.path_temp,
-                overwrite=self.overwrite,
-                delete_temp_on_error=self.delete_temp_on_error,
-            ))
+                overwrite=overwrite,
+                delete_temp_on_error=delete_temp_on_error,
+            )
+            managers.append(self.atomic_saver)
         else:
+            ## If not safe_save, delete the target path if it exists
             if self.overwrite:
                 if Path(self.path_target).exists():
                     delete_file_or_folder(self.path_target)
+
+        ## Initialize the MultiContextManager
         super().__init__(*managers)
 
+    def __enter__(self):
+        """
+        Enters the context manager and returns the path to the temporary file.
+        """
+        super().__enter__()
         return self.path_temp
 
     def __str__(self):

@@ -3,7 +3,7 @@ A more natural approach to saving hierarchical data structures.
 
 `richfile` saves any Python object using directory structures on disk, and loads them back again into the same Python objects.
 
-It is easy to use, the code is simple, and the operations follow [ACID](https://en.wikipedia.org/wiki/ACID) principles.
+It is easy to use, the code is simple and pure python, and the operations follow [ACID](https://en.wikipedia.org/wiki/ACID) principles.
 
 ## Installation
 ```bash
