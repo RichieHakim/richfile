@@ -275,7 +275,50 @@ class TypeLookup:
                 prop.update(props)
                 _verify_validity_of_type_lookup(self.properties)
                 return
-        
+    
+    def __delitem__(self, key: str) -> None:
+        """
+        Removes the property dictionary that has the field ``"type_name"`` that
+        matches input arg ``key``.
+
+        Args:
+            key (str): 
+                The ``"type_name"`` field to match.
+        """
+        if not isinstance(key, str):
+            raise ValueError("key must be a string.")
+        self.remove_property(key)
+        _verify_validity_of_type_lookup(self.properties)
+
+    def types_metadata(self) -> List[str]:
+        """
+        Returns information about each type in the type lookup.
+        Functions and classes are converted to strings.
+        """
+        import inspect
+        types_metadata = []
+        for prop in self.properties:
+            prop_metadata = {}
+            for key, value in prop.items():
+                if isinstance(value, type):
+                    prop_metadata[key] = str(value)
+                elif callable(value):
+                    prop_metadata[key] = inspect.getsource(value)
+                elif isinstance(value, list):
+                    if all([isinstance(elem, str) for elem in value]):
+                        prop_metadata[key] = value
+                    else:
+                        raise ValueError(f"Unexpected item in self.properties: {value}")
+                else:
+                    if isinstance(value, str):
+                        prop_metadata[key] = value
+                    else:
+                        raise ValueError(f"Unexpected item in self.properties: {value}")
+            types_metadata.append(prop_metadata)
+
+        return types_metadata
+
+
 def _verify_validity_of_type_lookup(type_lookup: List[Dict]) -> None:
     """
     Verifies that the properties are valid.
@@ -337,6 +380,14 @@ def _verify_validity_of_new_type(prop: Dict) -> Dict:
         Dict: 
             Same dict as input, but with any necessary corrections.
     """
+    ## Check that prop is a dictionary
+    if not isinstance(prop, dict):
+        raise ValueError("prop must be a dictionary.")
+    
+    ## Set versions_supported to empty list if not provided
+    if "versions_supported" not in prop.keys():
+        prop["versions_supported"] = []
+
     ## Check that the property dict has the correct keys. Use sets
     if set(prop.keys()) != set(_TYPE_KEYS_REQUIRED):
         keys_missing = set(_TYPE_KEYS_REQUIRED) - set(prop.keys())
@@ -434,6 +485,26 @@ def register_type(
     library: str,
     versions_supported: List[str] | None = []
 ):
+    """
+    Registers a new type of object that can be saved and loaded.
+
+    Args:
+        type_name (str): 
+            The name of the type.
+        function_load (Callable): 
+            The function that loads the object from a file.
+        function_save (Callable): 
+            The function that saves the object to a file.
+        object_class (type): 
+            The class of the object.
+        suffix (str): 
+            The suffix of the file.
+        library (str): 
+            The library that the object is associated with.
+        versions_supported (List[str], optional): 
+            A list of version strings that are supported by the object. 
+            If empty, all versions are supported. Defaults to [].
+    """
     prop = {
         "type_name":          type_name,
         "function_load":      function_load,
@@ -443,7 +514,26 @@ def register_type(
         "library":            library,
         "versions_supported": versions_supported,
     }
-    _verify_validity_of_new_type(prop)
+    register_type_from_dict(prop)
+
+def register_type_from_dict(prop: Dict) -> None:
+    """
+    Registers a new type of object that can be saved and loaded.
+
+    Args:
+        prop (Dict): 
+            A dictionary containing the properties of the object.
+            Must contain the following keys and corresponding types:
+                - type_name: str
+                - function_load: Callable
+                - function_save: Callable
+                - object_class: type
+                - suffix: str
+                - library: str
+                - versions_supported: List[str] (optional)
+    """
+    ## Clean the inputs
+    prop = _verify_validity_of_new_type(prop)
     _TYPE_LOOKUP.append(prop)
     _verify_validity_of_type_lookup(_TYPE_LOOKUP)
 
@@ -540,115 +630,96 @@ class Type_container:
         }
     
 
-######################################################################################
-######################################### CUSTOM TYPES ###############################
-######################################################################################
+################################################################################################
+######################################### CUSTOM TYPES #########################################
+################################################################################################
 
 
 #################
 ## numpy_array ##
 #################
 
-import numpy as np
+# import numpy as np
 
-def save_npy_array(
-    obj: np.ndarray,
-    path: Union[str, Path],
-    **kwargs,
-) -> None:
-    """
-    Saves a NumPy array to the given path.
-    """
-    np.save(path, obj, **kwargs)
+# def save_npy_array(
+#     obj: np.ndarray,
+#     path: Union[str, Path],
+#     **kwargs,
+# ) -> None:
+#     """
+#     Saves a NumPy array to the given path.
+#     """
+#     np.save(path, obj, **kwargs)
 
-def load_npy_array(
-    path: Union[str, Path],
-    **kwargs,
-) -> np.ndarray:
-    """
-    Loads an array from the given path.
-    """    
-    return np.load(path, **kwargs)
+# def load_npy_array(
+#     path: Union[str, Path],
+#     **kwargs,
+# ) -> np.ndarray:
+#     """
+#     Loads an array from the given path.
+#     """    
+#     return np.load(path, **kwargs)
 
-_TYPE_LOOKUP.append({
-        "type_name":          "numpy_array",
-        "function_load":      load_npy_array,
-        "function_save":      save_npy_array,
-        "object_class":       np.ndarray,
-        "suffix":             "npy",
-        "library":            "numpy",
-        "versions_supported": [">=1", "<3"],
-    })
+# _TYPE_LOOKUP.append({
+#         "type_name":          "numpy_array",
+#         "function_load":      load_npy_array,
+#         "function_save":      save_npy_array,
+#         "object_class":       np.ndarray,
+#         "suffix":             "npy",
+#         "library":            "numpy",
+#         "versions_supported": [">=1", "<3"],
+#     })
 
 ##################
 ## numpy_scalar ##
 ##################
 
-import numpy as np
+# import numpy as np
 
-def save_npy_scalar(
-    obj: np.ndarray,
-    path: Union[str, Path],
-    **kwargs,
-) -> None:
-    """
-    Saves a NumPy scalar to the given path.
-    """
-    np.save(path, obj, **kwargs)
-
-def load_npy_scalar(
-    path: Union[str, Path],
-    **kwargs,
-) -> np.ndarray:
-    """
-    Loads a numpy scalar from the given path.
-    """    
-    return np.load(path, **kwargs)
-
-_TYPE_LOOKUP.append({
-        "type_name":          "numpy_scalar",
-        "function_load":      load_npy_array,
-        "function_save":      save_npy_array,
-        "object_class":       np.number,
-        "suffix":             "npy",
-        "library":            "numpy",
-        "versions_supported": [">=1", "<3"],
-    })
+# _TYPE_LOOKUP.append({
+#         "type_name":          "numpy_scalar",
+#         "function_load":      load_npy_array,
+#         "function_save":      save_npy_array,
+#         "object_class":       np.number,
+#         "suffix":             "npy",
+#         "library":            "numpy",
+#         "versions_supported": [">=1", "<3"],
+#     })
 
 ##############
 ## datetime ##
 ##############
 
-import datetime
+# import datetime
 
-def save_datetime(
-    obj: datetime.datetime,
-    path: Union[str, Path],
-    **kwargs,
-) -> None:
-    """
-    Saves a datetime object to the given path.
-    """
-    util.save_json(obj.isoformat(), path, **kwargs)
+# def save_datetime(
+#     obj: datetime.datetime,
+#     path: Union[str, Path],
+#     **kwargs,
+# ) -> None:
+#     """
+#     Saves a datetime object to the given path.
+#     """
+#     util.save_json(obj.isoformat(), path, **kwargs)
 
-def load_datetime(
-    path: Union[str, Path],
-    **kwargs,
-) -> datetime.datetime:
-    """
-    Loads a datetime object from the given path.
-    """
-    return datetime.datetime.fromisoformat(util.load_json(path, **kwargs))
+# def load_datetime(
+#     path: Union[str, Path],
+#     **kwargs,
+# ) -> datetime.datetime:
+#     """
+#     Loads a datetime object from the given path.
+#     """
+#     return datetime.datetime.fromisoformat(util.load_json(path, **kwargs))
 
-_TYPE_LOOKUP.append({
-        "type_name":          "datetime",
-        "function_load":      load_datetime,
-        "function_save":      save_datetime,
-        "object_class":       datetime.datetime,
-        "suffix":             "json",
-        "library":            "python",
-        "versions_supported": [">=3", "<4"],
-    })
+# _TYPE_LOOKUP.append({
+#         "type_name":          "datetime",
+#         "function_load":      load_datetime,
+#         "function_save":      save_datetime,
+#         "object_class":       datetime.datetime,
+#         "suffix":             "json",
+#         "library":            "python",
+#         "versions_supported": [">=3", "<4"],
+#     })
 
 ########################
 ## scipy_sparse_array ##

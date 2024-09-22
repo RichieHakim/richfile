@@ -1,6 +1,7 @@
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
-VERSIONS_RICHFILE_SUPPORTED = [">=0.2.0", "<1.0.0"]
+VERSIONS_RICHFILE_SUPPORTED = [">=0.3.0", "<1.0.0"]
+PYTHON_VERSIONS_SUPPORTED = [">=3", "<4"]
 
 FILENAME_METADATA = ".metadata.richfile"
 JSON_INDENT = 4

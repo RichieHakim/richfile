@@ -1,3 +1,2 @@
 ## Required
-numpy
-scipy
+# numpy

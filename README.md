@@ -1,12 +1,22 @@
 # richfile
 A more natural approach to saving hierarchical data structures.
 
-`richfile` saves any Python object into directory structures on disk, and loads them back into Python objects.\
+`richfile` saves any Python object using directory structures on disk, and loads them back again into the same Python objects.
 
-Saving is simple:
+It is easy to use, the code is simple, and the operations follow [ACID](https://en.wikipedia.org/wiki/ACID) principles.
+
+## Installation
+```bash
+pip install richfile
+```
+
+## Examples
+Try out the examples in the [demo_notebook.ipynb](https://github.com/RichieHakim/richfile/blob/main/demo_notebook.ipynb) file.
+
+## Usage
+Saving and loading data is simple:
 ```python
-import as rf
-
+## Given some complex data structure
 data = {
     "name": "John Doe",
     "age": 25,
@@ -22,65 +32,29 @@ data = {
     (1,2,3): "complex key",
 }
 
-r = rf.RichFile("path/to/data.richfile").save(data)
-```
-
-Loading is simple:
-```python
+## Save it
 import as rf
+r = rf.RichFile("path/to/data.richfile").save(data)
 
-r = rf.RichFile("path/to/data.richfile")
-data = r.load()
+## Load it back
+data = rf.RichFile("path/to/data.richfile").load()
 ```
 
 You can also load just a part of the data:
 ```python
-import as rf
-
 r = rf.RichFile("path/to/data.richfile")
-sibling = r["siblings"][0]
+first_sibling = r["siblings"][0]  ## Lazily load a single item using pythonic indexing
+print(f"First sibling: {first_sibling}")
+
+>>> First sibling: Jane
 ```
 
 View the contents of a richfile directory without loading it:
 ```python
-import as rf
-
-r = rf.RichFile("path/to/data.richfile")
-r.view_tree()
-## OR
 r.view_directory_structure()
 ```
 
-## Installation
-```bash
-pip install richfile
-```
-or from source:
-```bash
-pip install git+https://github.com/RichieHakim/richfile.git
-```
-
-## Examples
-Try out the examples in the [demo_notebook.ipynb](https://github.com/RichieHakim/richfile/blob/main/demo_notebook.ipynb) file.
-Turns this Python object:
-```python
-data = {
-    "name": "John Doe",
-    "age": 25,
-    "address": {
-        "street": "1234 Elm St",
-        "zip": None
-    },
-    "siblings": [
-        "Jane",
-        "Jim"
-    ],
-    "data": np.array([1,2,3]),
-    (1,2,3): "complex key",
-}
-```
-
-Into a directory structure that looks like this:
+Output:
 ```
 Directory structure:
 Viewing tree structure of richfile at path: ~/path/data.richfile (dict)
@@ -126,8 +100,44 @@ Viewing tree structure of richfile at path: ~/path/data.richfile (dict)
 |
 ```
 
-## TODO:
+You can also add new data types easily:
+```python
+## Add type to a RichFile object
+r = rf.RichFile("path/to/data.richfile")
+r.register_type(
+    type_name='numpy_array',
+    function_load=lambda path: np.load(path),
+    function_save=lambda path, obj: np.save(path, obj),
+    object_class=np.ndarray,
+    library='numpy',
+    suffix='npy',
+)
 
+## OR
+## Add type to environment so that all new RichFile objects can use it
+rf.functions.register_type(
+    type_name='numpy_array',
+    function_load=lambda path: np.load(path),
+    function_save=lambda path, obj: np.save(path, obj),
+    object_class=np.ndarray,
+    library='numpy',
+    suffix='npy',
+)
+```
+
+## Installation from source
+```bash
+git clone https://github.com/RichieHakim/richfile
+cd richfile
+pip install -e .
+```
+
+## Considerations and Limitations
+- **Inversibility**: When creating custom data types, it is important to consider whether the saving and loading operations are exactly reversible.
+- [**ACID**](https://en.wikipedia.org/wiki/ACID) principles are reasonably followed via the use of temporary files, file locks, and atomic operations. However, the library is not a database, and therefore cannot guarantee the same level of ACID compliance as a database. In addition, atomic replacements of existing non-empty directories require two operations, which reduces atomicity.
+- **Performance**: Data structures with many branches will require many files and operations, which may become slow. Consider packaging highly branched data structures into a single file that supports hierarchical data, such as JSON, HDF5, Parquet, netCDF, zarr, numpy, etc. and making a custom data type for it.
+
+## TODO:
 - [ ] Tests
 - [ ] Documentation
 - [x] Examples

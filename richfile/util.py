@@ -83,10 +83,14 @@ import importlib.metadata
 import platform
 import copy
 import inspect
+import shutil
+import filelock
+import os
+from contextlib import ExitStack
 
 from . import functions
 from . import __version__ as VERSION_RICHFILE
-from . import VERSIONS_RICHFILE_SUPPORTED, FILENAME_METADATA, JSON_INDENT
+from . import VERSIONS_RICHFILE_SUPPORTED, PYTHON_VERSIONS_SUPPORTED, FILENAME_METADATA, JSON_INDENT
 
 
 REQUIREMENTS = {
@@ -171,10 +175,12 @@ def load_folder(
         indices = [value["index"] for value in metadata["elements"].values()]
         if len(indices) != len(set(indices)):
             raise ValueError("Indices in metadata are not unique.")
-        if metadata["library"] != "python":
+        
+        elif metadata["library"] == "python":
+            if not is_version_compatible(version=metadata["version"], rules=PYTHON_VERSIONS_SUPPORTED):
+                raise ValueError(f"Python version '{metadata['version']}' not supported for library 'python' and type '{metadata['type']}'. Version rules: {PYTHON_VERSIONS_SUPPORTED}")
+        else:
             raise ValueError("Only 'python' library supported for container types.")
-        if not is_version_compatible(version=metadata["version"], rules=type_lookup[metadata["type"]]["versions_supported"]):
-            raise ValueError(f"Python version {metadata['version']} not supported.")
         
     ## Sort the element names by their index
     names_meta_sorted = _sort_element_names_by_index(metadata=metadata, check=check)
@@ -281,8 +287,12 @@ def _prepare_element_loading(
     if check:
         if type_lookup[metadata["type"]]["library"] == []:
             warnings.warn(f"Field 'versions_supported' is empty in type_lookup for type {metadata['type']}.")
+        ## If the library is python, check the variable directory
+        elif metadata["library"] == "python":
+            if not is_version_compatible(version=metadata["version"], rules=PYTHON_VERSIONS_SUPPORTED):
+                raise ValueError(f"Python version '{metadata['version']}' not supported for library 'python' and type '{metadata['type']}'. Version rules: {PYTHON_VERSIONS_SUPPORTED}")
         elif not is_version_compatible(version=metadata["version"], rules=type_lookup[metadata["type"]]["versions_supported"]):
-            raise ValueError(f"Version {metadata['version']} not supported.")
+            raise ValueError(f"Version '{metadata['version']}' not supported for library '{metadata['library']}' and type '{metadata['type']}'. Version rules: {type_lookup[metadata['type']]['versions_supported']}")
         ## Check that path exists as either a file or a directory
         if not Path(path).exists():
             raise FileNotFoundError(f"Path {path} not found.")            
@@ -542,14 +552,15 @@ class RichFile:
     High-level class for handling reading and writing objects in the RichFile format.
     Allows customization of loading and saving functions, and setting additional parameters.
     """
-
     def __init__(
         self,
         path: Optional[Union[str, Path]] = None,
         check: Optional[bool] = True,
+        safe_save: Optional[bool] = True,
     ):
         self.path = path
         self.check = check
+        self.safe_save = safe_save
 
         self.type_lookup = copy.deepcopy(functions.TypeLookup())
         self.params_load = {}
@@ -560,40 +571,36 @@ class RichFile:
         obj: Any, 
         path: Optional[Union[str, Path]] = None, 
         check: Optional[bool] = None, 
+        safe_save: Optional[bool] = None,
         overwrite: Optional[bool] = False,
         name_dict_items: bool = True,
     ) -> None:
         path = self.path if path is None else path
         check = self.check if check is None else check
+        safe_save = self.safe_save if safe_save is None else safe_save
         if (path is None) or (not isinstance(check, bool)):
             raise ValueError("`path` [str, Path] and `check` [bool] must be specified.")
-        
-        if check:
-            ## Check if the path already exists
-            if Path(path).exists():
-                ### If overwrite is False, raise an error
-                if not overwrite:
-                    raise FileExistsError(f"Path already exists: {path}.")
-                ### If overwrite is True, delete the path
-                elif overwrite:
-                    if Path(path).is_file():
-                        Path(path).unlink()
-                    elif Path(path).is_dir():
-                        import shutil
-                        shutil.rmtree(path)
-                    else:
-                        raise FileNotFoundError(f"Path {path} not found.")
-                else:
-                    raise ValueError("`overwrite` must be a boolean.")
 
-        save_object(
-            obj, 
-            path, 
-            type_lookup=self.type_lookup,
-            check=check, 
-            overwrite=overwrite, 
-            name_dict_items=name_dict_items,
-        )
+        ## Create a lock file specific to the target path
+        ### Append the lock suffix to the path (don't replace the suffix)
+        path = str(path)
+        with SafeSaver(
+            path_target=path,
+            path_temp=path_temp,
+            path_lock=path_temp + ".lock",
+            overwrite=overwrite,
+            safe_save=safe_save,
+            delete_temp_on_error=False,
+        ) as path_temp:
+            save_object(
+                obj=obj,
+                path=path_temp,
+                type_lookup=self.type_lookup,
+                check=check,
+                overwrite=overwrite,
+                name_dict_items=name_dict_items,
+            )
+                
         return self
     
     def load(
@@ -936,3 +943,214 @@ class RichFile:
             raise ValueError("__getitem__ only supports str and int keys.")
         
         raise KeyError(f"Key {key} not found.")
+    
+
+def delete_file_or_folder(path: Union[str, Path]) -> None:
+    """
+    Deletes files OR directories.
+
+    Args:
+        path (Union[str, Path]): 
+            The path to the file or directory to delete.
+    """
+    path = Path(path)
+    try:
+        if path.is_file() or path.is_symlink():
+            path.unlink()
+        elif path.is_dir():
+            shutil.rmtree(str(path))
+        else:
+            pass  ## path does not exist, do nothing
+    except Exception as e:
+        warnings.warn(f"Failed to delete path: {path}. Error: {e}")
+    
+
+class FileLock_AutoDeleting(filelock.FileLock):
+    """
+    A robust and safe wrapper around filelock.FileLock that ensures the lock
+    file is deleted upon release or when exiting a with statement, preventing
+    orphaned lock files.
+    """
+    def release(self, force: bool = False):
+        """
+        Release the lock and delete the lock file if it exists.
+        """
+        super().release(force=force)
+        try:
+            Path(self.lock_file).unlink()
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            warnings.warn(f"Failed to remove lock file: {e}")
+
+        
+class AtomicSaver:
+    """
+    Context manager for safely saving files or directories using a temporary
+    path. On successful exit, it replaces the target path with the temporary
+    data. On error, it deletes the temporary path if desired.
+    RH 2024
+
+    Args:
+        path_target (Union[str, Path]):
+            The path to the target file or directory to save.
+        path_temp (Optional[Union[str, Path]):
+            The path to the temporary file or directory to save. If None, it
+            will be the target path with '.tmp' appended.
+        overwrite (bool):
+            If True, the target path will be overwritten if it exists.
+        delete_temp_on_error (bool):
+            If True, the temporary path will be deleted if an error occurs.    
+    """
+    def __init__(
+        self, 
+        path_target: Union[str, Path], 
+        path_temp: Optional[Union[str, Path]] = None,
+        overwrite: bool = False,
+        delete_temp_on_error: bool = False,
+    ):
+        self.path_target = str(path_target)
+        self.path_temp = str(path_temp) if path_temp is not None else self.path_target + '.tmp'
+
+        self.overwrite = overwrite
+        self.delete_temp_on_error = delete_temp_on_error
+
+    def __enter__(self):
+        ## Handle overwrite protection
+        if not self.overwrite:
+            if Path(self.path_target).exists():
+                raise FileExistsError(f"Path already exists: {self.path_target} and overwrite is False.")
+        ## Delete the temp path if it exists
+        if Path(self.path_temp).exists():
+            delete_file_or_folder(self.path_temp)
+            
+        return self.path_temp
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        try:
+            if exc_type is None:
+            ## No exception, proceed to replace target with temp
+                ## Replace the target path with the temp path atomically using os.replace
+                ### Handle non-empty directories by deleting the target path first (loss of atomicity)
+                if Path(self.path_target).is_dir():
+                    if Path(self.path_target).exists():
+                        delete_file_or_folder(self.path_target)
+                os.replace(src=self.path_temp, dst=self.path_target)
+                
+            else:
+                ## An exception occurred, delete the temp path
+                if Path(self.path_temp).exists() and self.delete_temp_on_error:
+                    delete_file_or_folder(self.path_temp)
+                ## Return False to re-raise the exception
+                return False
+        ## If an exception occurs during the replacement, delete the temp path
+        except Exception as e:
+            ## Delete the temp path
+            if Path(self.path_temp).exists() and self.delete_temp_on_error:
+                delete_file_or_folder(self.path_temp)
+            ## Raise the exception
+            raise e
+    
+    def __str__(self):
+        return f"SafeSaver(path_target={self.path_target}, path_temp={self.path_temp}, delete_temp_on_error={self.delete_temp_on_error})"
+    
+
+class MultiContextManager:
+    """
+    A context manager that allows multiple context managers to be used at once.
+    RH 2024
+
+    Args:
+        *managers (context managers):
+            Multiple context managers to be used at once.
+
+    Demo:
+        .. code-block:: python
+
+            with MultiContextManager(
+                torch.no_grad(), 
+                temp_set_attr(obj, attr, new_val), 
+                open('file.txt', 'w') as f,
+            ):
+                # do something
+    """
+    def __init__(self, *managers):
+        self.managers = managers
+        self.stack = ExitStack()
+
+    def __enter__(self):
+        for manager in self.managers:
+            self.stack.enter_context(manager)
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.stack.__exit__(exc_type, exc_value, traceback)
+        
+
+class SafeSaver(MultiContextManager):
+    """
+    Context manager for safely saving files or directories using a temporary
+    path and path locking. This class combines the FileLock_AutoDeleting and
+    AtomicSaver classes.
+    RH 2024
+
+    Args:
+        path_target (Union[str, Path]):
+            The path to the target file or directory to save.
+        path_temp (Optional[Union[str, Path]):
+            The path to the temporary file or directory to save. If None, it
+            will be the target path with '.tmp' appended.
+        path_lock (Optional[Union[str, Path]):
+            The path to the lock file. If None, it will be the target path
+            with '.lock' appended.
+        overwrite (bool):
+            If True, the target path will be overwritten if it exists.
+        safe_save (bool):
+            If True, the save operation will be wrapped in an AtomicSaver. If
+            False and overwrite is True, the target path will be deleted before
+            saving.
+        delete_temp_on_error (bool):
+            If True, the temporary path will be deleted if an error occurs.
+
+    Returns:
+        str:
+            path_temp: The path to the temporary file or directory.
+    """
+    def __init__(
+        self, 
+        path_target: Union[str, Path], 
+        path_temp: Optional[Union[str, Path]] = None,
+        path_lock: Optional[Union[str, Path]] = None,
+        overwrite: bool = False,
+        safe_save: bool = True,
+        delete_temp_on_error: bool = False,
+    ):
+        self.path_target = str(path_target)
+        self.path_temp = str(path_temp) if path_temp is not None else self.path_target + '.tmp'
+        self.path_lock = str(path_lock) if path_lock is not None else self.path_target + '.lock'
+
+        self.overwrite = overwrite
+        self.safe_save = safe_save
+        self.delete_temp_on_error = delete_temp_on_error
+
+        ## Create the lock file
+        self.lock = FileLock_AutoDeleting(self.path_lock)
+
+        ## Create the context managers
+        managers = [self.lock]
+        if self.safe_save:
+            managers.append(AtomicSaver(
+                path_target=self.path_target,
+                path_temp=self.path_temp,
+                overwrite=self.overwrite,
+                delete_temp_on_error=self.delete_temp_on_error,
+            ))
+        else:
+            if self.overwrite:
+                if Path(self.path_target).exists():
+                    delete_file_or_folder(self.path_target)
+        super().__init__(*managers)
+
+        return self.path_temp
+
+    def __str__(self):
+        return f"SafeSaver(path_target={self.path_target}, path_temp={self.path_temp}, path_lock={self.path_lock}, overwrite={self.overwrite}, safe_save={self.safe_save}, delete_temp_on_error={self.delete_temp_on_error})"
