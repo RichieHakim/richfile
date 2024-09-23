@@ -949,6 +949,20 @@ class RichFile:
         
         raise KeyError(f"Key {key} not found.")
     
+    def keys(self):
+        """
+        Returns a list of keys in the directory.
+        """
+        try:
+            metadata = self.get_metadata(self.path)
+            names_elements_raw = list(metadata['elements'].keys())
+            names_elements = ['.'.join(name.split('.')[:-1]) for name in names_elements_raw]
+            return names_elements
+        except FileNotFoundError:
+            return []
+        except Exception as e:
+            warnings.warn(f"Path element failed to load metadata or doesn't have .keys() method. Error: {e}")
+    
 
 def delete_file_or_folder(path: Union[str, Path]) -> None:
     """
