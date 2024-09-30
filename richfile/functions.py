@@ -244,7 +244,7 @@ class TypeLookup:
                 if str(query) == str(props["object_class"]):
                     return props
             ### Else, raise an error
-            raise TypeError(f"Type '{query}' not supported.")
+            raise TypeError(f"Type '{query}' not supported. You can register a new type using `richfile.functions.register_type`.")
 
         else:
             raise ValueError("key_value must be a string, type, or tuple of length 2.")

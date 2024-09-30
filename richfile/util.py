@@ -90,7 +90,7 @@ from contextlib import ExitStack
 
 from . import functions
 from . import __version__ as VERSION_RICHFILE
-from . import VERSIONS_RICHFILE_SUPPORTED, PYTHON_VERSIONS_SUPPORTED, FILENAME_METADATA, JSON_INDENT
+from . import VERSIONS_RICHFILE_SUPPORTED, PYTHON_VERSIONS_SUPPORTED, FILENAME_METADATA, FILENAME_TYPELOOKUP, JSON_INDENT
 
 
 REQUIREMENTS = {
@@ -170,7 +170,7 @@ def load_folder(
     metadata = load_folder_metadata(path_dir=path, name_metadata=FILENAME_METADATA, check=check)
 
     if check:
-        names_path_elements = [p.name for p in Path(path).iterdir() if p.name != FILENAME_METADATA]
+        names_path_elements = [p.name for p in Path(path).iterdir() if (p.name != FILENAME_METADATA) and (p.name != FILENAME_TYPELOOKUP)]
         # Check that index values are unique
         indices = [value["index"] for value in metadata["elements"].values()]
         if len(indices) != len(set(indices)):
@@ -548,19 +548,48 @@ def is_version_compatible(version: str, rules: List[str]) -> bool:
 ####################################################################################################
 
 class RichFile:
-    """
+    f"""
     High-level class for handling reading and writing objects in the RichFile format.
     Allows customization of loading and saving functions, and setting additional parameters.
+    RH 2024
+
+    Args:
+        path (Optional[Union[str, Path]): 
+            The path to save the object to. If None, uses the path specified
+            in the RichFile object.
+        check (Optional[bool]): 
+            Whether to perform checks on the object and path. If None, uses
+            the check specified in the RichFile object.
+        safe_save (Optional[bool]): 
+            Whether to use a safe save method. If None, uses the safe_save
+            specified in the RichFile object.
+        overwrite (Optional[bool]): 
+            Whether to overwrite the file if it already exists. If None,
+            uses the overwrite specified in the RichFile object.
+        name_dict_items (Optional[bool]):
+            Whether to name dict items as their keys. If None, uses the
+            name_dict_items specified in the RichFile object.
+        save_type_lookup (Optional[bool]):
+            Whether to save the type lookup table as a file named
+            {FILENAME_TYPELOOKUP} in the outermost richfile directory if it
+            is a directory. If None, uses the save_type_lookup specified in
+            the RichFile object.
     """
     def __init__(
         self,
         path: Optional[Union[str, Path]] = None,
         check: Optional[bool] = True,
         safe_save: Optional[bool] = True,
+        overwrite: Optional[bool] = False,
+        name_dict_items: Optional[bool] = True,
+        save_type_lookup: Optional[bool] = True,
     ):
-        self.path = path
-        self.check = check
-        self.safe_save = safe_save
+        self.path             = path
+        self.check            = check
+        self.safe_save        = safe_save
+        self.overwrite        = overwrite
+        self.name_dict_items  = name_dict_items
+        self.save_type_lookup = save_type_lookup
 
         self.type_lookup = copy.deepcopy(functions.TypeLookup())
         self.params_load = {}
@@ -572,30 +601,66 @@ class RichFile:
         path: Optional[Union[str, Path]] = None, 
         check: Optional[bool] = None, 
         safe_save: Optional[bool] = None,
-        overwrite: Optional[bool] = False,
-        name_dict_items: bool = True,
+        overwrite: Optional[bool] = None,
+        name_dict_items: Optional[bool] = None,
+        save_type_lookup: Optional[bool] = None,
     ) -> None:
-        path = self.path if path is None else path
-        check = self.check if check is None else check
-        safe_save = self.safe_save if safe_save is None else safe_save
+        f"""
+        Saves an object to the given path.
+
+        Args:
+            obj (Any): 
+                The object to save.
+            path (Optional[Union[str, Path]]): 
+                The path to save the object to. If None, uses the path specified
+                in the RichFile object.
+            check (Optional[bool]): 
+                Whether to perform checks on the object and path. If None, uses
+                the check specified in the RichFile object.
+            safe_save (Optional[bool]): 
+                Whether to use a safe save method. If None, uses the safe_save
+                specified in the RichFile object.
+            overwrite (Optional[bool]): 
+                Whether to overwrite the file if it already exists. If None,
+                uses the overwrite specified in the RichFile object.
+            name_dict_items (Optional[bool]):
+                Whether to name dict items as their keys. If None, uses the
+                name_dict_items specified in the RichFile object.
+            save_type_lookup (Optional[bool]):
+                Whether to save the type lookup table as a file named
+                {FILENAME_TYPELOOKUP} in the outermost richfile directory if it
+                is a directory. If None, uses the save_type_lookup specified in
+                the RichFile object.
+        """
+        path             = self.path             if path             is None else path
+        check            = self.check            if check            is None else check
+        safe_save        = self.safe_save        if safe_save        is None else safe_save
+        overwrite        = self.overwrite        if overwrite        is None else overwrite
+        name_dict_items  = self.name_dict_items  if name_dict_items  is None else name_dict_items
+        save_type_lookup = self.save_type_lookup if save_type_lookup is None else save_type_lookup
+
         if (path is None) or (not isinstance(check, bool)):
             raise ValueError("`path` [str, Path] and `check` [bool] must be specified.")
+        
+        kwargs_safe_saver = {
+            "overwrite": overwrite,
+            "safe_save": safe_save,
+            "delete_temp_on_error": False,
+            "timeout_lock": 1,
+            "force_acquire_lock": overwrite,
+            "force_release_lock": True,
+        }
 
         ## Create a lock file specific to the target path
         ### Append the lock suffix to the path (don't replace the suffix)
-        path = str(path)
-        path_temp = path + '.tmp'
-        path_lock = path + '.lock'
+        path_obj = str(path)
+        fn_make_path_tmp  = lambda path: path + '.tmp'
+        fn_make_path_lock = lambda path: path + '.lock'
         with SafeSaver(
-            path_target=path,
-            path_temp=path_temp,
-            path_lock=path_lock,
-            overwrite=overwrite,
-            safe_save=safe_save,
-            delete_temp_on_error=False,
-            timeout_lock=1,
-            force_acquire_lock=overwrite,
-            force_release_lock=True,
+            path_target=path_obj,
+            path_temp=fn_make_path_tmp(path),
+            path_lock=fn_make_path_lock(path),
+            **kwargs_safe_saver,
         ) as path_temp:
             save_object(
                 obj=obj,
@@ -605,6 +670,32 @@ class RichFile:
                 overwrite=overwrite,
                 name_dict_items=name_dict_items,
             )
+            
+        if save_type_lookup:
+            ## Make the type_lookup table a file in the outermost directory
+            type_lookup = copy.deepcopy(self.type_lookup.properties)
+            ### Convert the functions and classes into strings
+            for prop in type_lookup:
+                prop["function_load"] = inspect.getsource(prop["function_load"])
+                prop["function_save"] = inspect.getsource(prop["function_save"])
+            
+                prop["object_class"] = str(prop["object_class"])
+
+            ## If the richfile is a directory, save the type lookup table as a file in the outermost directory
+            if Path(path).is_dir():
+                ## Save as a .json file
+                path_type_lookup = str(Path(path) / FILENAME_TYPELOOKUP)
+                with SafeSaver(
+                    path_target=path_type_lookup,
+                    path_temp=fn_make_path_tmp(path_type_lookup),
+                    path_lock=fn_make_path_lock(path_type_lookup),
+                    **kwargs_safe_saver,
+                ) as path_temp:
+                    save_json(
+                        obj=type_lookup,
+                        path=path_temp,
+                        indent=JSON_INDENT,
+                    )
                 
         return self
     
@@ -692,6 +783,12 @@ class RichFile:
         """
         Registers a new type with custom loading and saving functions.
         """
+        if self.check:
+            if not isinstance(prop, dict):
+                raise TypeError("`prop` must be a dictionary.")
+        ## Add in versions_supported if not present
+        prop.setdefault("versions_supported", [])
+
         ## Use inspect to ensure that all args in register_type are present. Kwargs okay to skip.
         sig = inspect.signature(self.register_type)
         args_available = set(prop.keys())
