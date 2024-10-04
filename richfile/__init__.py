@@ -1,4 +1,4 @@
-__version__ = "0.4.3"
+__version__ = "0.4.4"
 
 VERSIONS_RICHFILE_SUPPORTED = [">=0.3.1", "<1.0.0"]
 PYTHON_VERSIONS_SUPPORTED = [">=3", "<4"]

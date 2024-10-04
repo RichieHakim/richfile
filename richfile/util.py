@@ -1086,13 +1086,30 @@ class FileLock_AutoDeleting(filelock.FileLock):
     A robust and safe wrapper around filelock.FileLock that ensures the lock
     file is deleted upon release or when exiting a with statement, preventing
     orphaned lock files.
+
+    Args:
+        lock_file (Union[str, Path]):
+            The path to the lock file.
+        timeout (Optional[float]):
+            The maximum time to wait for the lock in seconds.
+        force_acquire (bool):
+            If True, the lock will be acquired even if the lock file exists.
+        force (bool):
+            NOT USED. This class always forces the lock to be released and
+            deleted.
     """
     def __init__(
         self, 
         lock_file: Union[str, Path], 
         timeout: Optional[float] = None,
         force_acquire: bool = False,
+        force: bool = False,
     ):
+        if isinstance(force_acquire, bool):
+            self.force_acquire = force_acquire
+        else:
+            raise ValueError("`force_acquire` must be a boolean.")
+
         if force_acquire and Path(lock_file).exists():
             Path(lock_file).unlink()
 
@@ -1327,6 +1344,8 @@ class SafeSaver(MultiContextManager):
             if self.overwrite:
                 if Path(self.path_target).exists():
                     delete_file_or_folder(self.path_target)
+            ## Set path_temp to path_target
+            self.path_temp = self.path_target
 
         ## Initialize the MultiContextManager
         super().__init__(*managers)

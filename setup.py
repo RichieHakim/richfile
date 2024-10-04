@@ -59,4 +59,5 @@ setup(
 
     install_requires=list(deps_all_dict.values()),
     # extras_require=,
+    # python_requires='>=3.11',
 )
