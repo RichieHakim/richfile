@@ -90,7 +90,7 @@ from contextlib import ExitStack
 
 from . import functions
 from . import __version__ as VERSION_RICHFILE
-from . import VERSIONS_RICHFILE_SUPPORTED, PYTHON_VERSIONS_SUPPORTED, FILENAME_METADATA, FILENAME_TYPELOOKUP, JSON_INDENT
+from . import VERSIONS_RICHFILE_SUPPORTED, PYTHON_VERSIONS_SUPPORTED, FILENAME_METADATA, FILENAME_TYPELOOKUP, JSON_INDENT, INVALID_FILENAME_CHARS
 
 
 REQUIREMENTS = {
@@ -435,7 +435,7 @@ def _check_filename_safety(name: str, warn: bool = True, raise_error: bool = Fal
     """
     Checks if a filename is safe to use.
     """
-    issue = list(set(list(name)) & set(["/", "\\", ":", "*", "?", "\"", "<", ">", "|", "\x00"]))
+    issue = list(set(list(name)) & set(INVALID_FILENAME_CHARS))
     n_issues = len(issue)
 
     if n_issues > 0:

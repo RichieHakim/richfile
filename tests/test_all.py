@@ -9,6 +9,7 @@ import warnings
 import pytest
 import hypothesis
 import richfile as rf
+from richfile import INVALID_FILENAME_CHARS
 
 # Module-level variable for test data
 DATA_BASIC = {
@@ -25,9 +26,6 @@ DATA_BASIC = {
     "data": [1, 2, 3],
     (1, 2, 3): "complex key",
 }
-
-BAD_CHARACTERS = set(["/", "\\", r"\\", ":", "*", "?", "\"", "<", ">", "|",] + [chr(i) for i in range(32)])
-
 
 def save_and_load(file_path, obj):
     # Save data
@@ -91,7 +89,7 @@ def test_lazy_loading():
 # dict
 @hypothesis.given(
     hypothesis.strategies.dictionaries(
-        keys=hypothesis.strategies.text().filter(lambda x: not any(c in x for c in BAD_CHARACTERS)),
+        keys=hypothesis.strategies.text().filter(lambda x: not any(c in x for c in INVALID_FILENAME_CHARS)),
         values=hypothesis.strategies.one_of(
             hypothesis.strategies.text(),
             hypothesis.strategies.integers(),
