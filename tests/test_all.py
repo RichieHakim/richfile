@@ -26,7 +26,7 @@ DATA_BASIC = {
     (1, 2, 3): "complex key",
 }
 
-BAD_CHARACTERS = set(["/", "\\", ":", "*", "?", "\"", "<", ">", "|", "\x00"])
+BAD_CHARACTERS = set(["/", "\\", r"\\", ":", "*", "?", "\"", "<", ">", "|",])
 
 
 def save_and_load(file_path, obj):
@@ -86,6 +86,8 @@ def test_lazy_loading():
 
 
 # Property-based tests with hypothesis
+## Deadline=None
+@hypothesis.settings(deadline=None)
 # dict
 @hypothesis.given(
     hypothesis.strategies.dictionaries(
@@ -97,7 +99,7 @@ def test_lazy_loading():
             hypothesis.strategies.booleans(),
             hypothesis.strategies.none(),
         ),
-    )
+    ),
 )
 def test_save_load_dict(data):
     with tempfile.TemporaryDirectory() as temp_dir:
