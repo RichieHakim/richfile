@@ -136,6 +136,7 @@ jobs:
       run: |
         # pip install tox tox-gh-actions
         pip install pytest pytest-cov
+        pip install -r requirements_testing.txt
         python -m pytest --capture=tee-sys --cov=richfile --cov-report=xml:coverage.xml --color=yes
 
     - name: Upload coverage reports to Codecov
