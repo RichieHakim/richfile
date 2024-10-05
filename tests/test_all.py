@@ -84,9 +84,8 @@ def test_lazy_loading():
 
 
 # Property-based tests with hypothesis
-## Deadline=None
-hypothesis.settings.register_profile("default", deadline=None)
 # dict
+@hypothesis.settings(deadline=60)
 @hypothesis.given(
     hypothesis.strategies.dictionaries(
         keys=hypothesis.strategies.text().filter(lambda x: not any(c in x for c in INVALID_FILENAME_CHARS)),
@@ -107,6 +106,7 @@ def test_save_load_dict(data):
 
 
 # list
+@hypothesis.settings(deadline=60)
 @hypothesis.given(hypothesis.strategies.lists(hypothesis.strategies.integers()))
 def test_save_load_list(data):
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -116,6 +116,7 @@ def test_save_load_list(data):
 
 
 # tuple
+@hypothesis.settings(deadline=60)
 @hypothesis.given(
     hypothesis.strategies.tuples(
         hypothesis.strategies.booleans(),
@@ -131,6 +132,7 @@ def test_save_load_tuple(data):
 
 
 # set
+@hypothesis.settings(deadline=60)
 @hypothesis.given(hypothesis.strategies.sets(hypothesis.strategies.integers()))
 def test_save_load_set(data):
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -140,6 +142,7 @@ def test_save_load_set(data):
 
 
 # frozenset
+@hypothesis.settings(deadline=60)
 @hypothesis.given(hypothesis.strategies.frozensets(hypothesis.strategies.integers()))
 def test_save_load_frozenset(data):
     with tempfile.TemporaryDirectory() as temp_dir:
