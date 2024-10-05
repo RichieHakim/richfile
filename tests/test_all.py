@@ -88,7 +88,7 @@ def test_lazy_loading():
 @hypothesis.settings(deadline=600)
 @hypothesis.given(
     hypothesis.strategies.dictionaries(
-        keys=hypothesis.strategies.text().filter(lambda x: not rf.invalid_chars_filename(x)),
+        keys=hypothesis.strategies.text().filter(lambda x: len([c for c, v in rf.invalid_chars_filename(x).items() if v]) == 0),
         values=hypothesis.strategies.one_of(
             hypothesis.strategies.text(),
             hypothesis.strategies.integers(),

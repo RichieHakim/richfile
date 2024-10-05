@@ -436,14 +436,15 @@ def _check_filename_safety(name: str, warn: bool = True, raise_error: bool = Fal
     """
     Checks if a filename is safe to use.
     """
-    issue = invalid_chars_filename(name)
-    n_issues = len(issue)
+    issues = invalid_chars_filename(name)
+    bad_chars = [c for c, valid in issues.items() if not valid]
+    n_issues = len(bad_chars)
 
     if n_issues > 0:
         if warn:
-            warnings.warn(f"Filename contains invalid character: {issue}. Name: {name}")
+            warnings.warn(f"Filename contains invalid character: {bad_chars}. Name: {name}")
         if raise_error:
-            raise ValueError(f"Filename contains invalid character: {issue}. Name: {name}")
+            raise ValueError(f"Filename contains invalid character: {bad_chars}. Name: {name}")
 
 
 def _prepare_save_path(path: Union[str, Path], overwrite: bool = False, mkdir: bool = True) -> None:
@@ -621,7 +622,7 @@ def invalid_chars_filename(name: str) -> str:
         
         return True  
 
-    return all([single(c) for c in list(name)])  
+    return {c: single(c) for c in name if not single(c)}
 
 
 ####################################################################################################
