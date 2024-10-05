@@ -585,38 +585,41 @@ def is_container_type(obj: Any, type_lookup: Dict) -> bool:
         
 
 def invalid_chars_filename(name: str) -> str:
+    """
+    Checks if a filename contains invalid characters.
+    """
     def single(c):
         code_point = ord(c)
         
         # Control characters (ASCII codes 0-31, 127)
         if code_point <= 31 or code_point == 127:
-            return True
+            return False
         
         # Invalid characters on Windows
         if c in '<>:"/\\|?*':
-            return True
+            return False
         
         # Path separator on Unix/Linux and macOS
         if c == '/':
-            return True
+            return False
         
         # Surrogate halves (U+D800 to U+DFFF)
         if 0xD800 <= code_point <= 0xDFFF:
-            return True
+            return False
         
         # Noncharacters (U+FDD0 to U+FDEF, and code points ending with FFFE or FFFF)
         if 0xFDD0 <= code_point <= 0xFDEF or (code_point & 0xFFFF) in (0xFFFE, 0xFFFF):
-            return True
+            return False
         
         # Code points beyond U+FFFF (outside BMP)
         if code_point > 0xFFFF:
-            return True
+            return False
         
         # Unassigned code points
         if unicodedata.category(c) == 'Cn':
-            return True
+            return False
         
-        return False  
+        return True  
 
     return all([single(c) for c in list(name)])  
 
