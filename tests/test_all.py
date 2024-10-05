@@ -85,7 +85,7 @@ def test_lazy_loading():
 
 # Property-based tests with hypothesis
 ## Deadline=None
-@hypothesis.settings(deadline=None)
+hypothesis.settings.register_profile("default", deadline=None)
 # dict
 @hypothesis.given(
     hypothesis.strategies.dictionaries(
