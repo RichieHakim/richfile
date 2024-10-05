@@ -87,10 +87,11 @@ import shutil
 import filelock
 import os
 from contextlib import ExitStack
+import unicodedata
 
 from . import functions
 from . import __version__ as VERSION_RICHFILE
-from . import VERSIONS_RICHFILE_SUPPORTED, PYTHON_VERSIONS_SUPPORTED, FILENAME_METADATA, FILENAME_TYPELOOKUP, JSON_INDENT, INVALID_FILENAME_CHARS
+from . import VERSIONS_RICHFILE_SUPPORTED, PYTHON_VERSIONS_SUPPORTED, FILENAME_METADATA, FILENAME_TYPELOOKUP, JSON_INDENT
 
 
 REQUIREMENTS = {
@@ -435,7 +436,7 @@ def _check_filename_safety(name: str, warn: bool = True, raise_error: bool = Fal
     """
     Checks if a filename is safe to use.
     """
-    issue = list(set(list(name)) & set(INVALID_FILENAME_CHARS))
+    issue = [c for c in name if invalid_chars_filename(c)]
     n_issues = len(issue)
 
     if n_issues > 0:
@@ -582,6 +583,39 @@ def is_container_type(obj: Any, type_lookup: Dict) -> bool:
         except Exception as e:
             return e
         
+
+def invalid_chars_filename(c):
+    code_point = ord(c)
+    
+    # Control characters (ASCII codes 0-31, 127)
+    if code_point <= 31 or code_point == 127:
+        return True
+    
+    # Invalid characters on Windows
+    if c in '<>:"/\\|?*':
+        return True
+    
+    # Path separator on Unix/Linux and macOS
+    if c == '/':
+        return True
+    
+    # Surrogate halves (U+D800 to U+DFFF)
+    if 0xD800 <= code_point <= 0xDFFF:
+        return True
+    
+    # Noncharacters (U+FDD0 to U+FDEF, and code points ending with FFFE or FFFF)
+    if 0xFDD0 <= code_point <= 0xFDEF or (code_point & 0xFFFF) in (0xFFFE, 0xFFFF):
+        return True
+    
+    # Code points beyond U+FFFF (outside BMP)
+    if code_point > 0xFFFF:
+        return True
+    
+    # Unassigned code points
+    if unicodedata.category(c) == 'Cn':
+        return True
+    
+    return False    
 
 
 ####################################################################################################

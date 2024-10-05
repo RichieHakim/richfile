@@ -8,15 +8,6 @@ FILENAME_TYPELOOKUP = ".typelookup.richfile"
 
 JSON_INDENT = 4
 
-INVALID_FILENAME_CHARS = list(set(
-    [chr(i) for i in range(32)] + \
-    [chr(127),] + list('<>:"/\\|?*') + \
-    list('/') + \
-    [chr(ii) for ii in range(0xD800, 0xDFFF)] + \
-    [chr(ii) for ii in range(0xFDD0, 0xFDEF)] + \
-    [chr(ii) for ii in range(0xFFFE, 0xFFFF)]
-))
-
 ## Import important stuff from util.py into top-level namespace
 from . import functions, util
-from .util import RichFile, load_folder, load_element, load_folder_metadata, save_object
+from .util import RichFile, load_folder, load_element, load_folder_metadata, save_object, invalid_chars_filename

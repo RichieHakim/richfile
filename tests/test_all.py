@@ -9,7 +9,7 @@ import warnings
 import pytest
 import hypothesis
 import richfile as rf
-from richfile import INVALID_FILENAME_CHARS
+
 
 # Module-level variable for test data
 DATA_BASIC = {
@@ -88,7 +88,7 @@ def test_lazy_loading():
 @hypothesis.settings(deadline=600)
 @hypothesis.given(
     hypothesis.strategies.dictionaries(
-        keys=hypothesis.strategies.text().filter(lambda x: not any(c in x for c in INVALID_FILENAME_CHARS)),
+        keys=hypothesis.strategies.text().filter(lambda x: not rf.invalid_chars_filename(x)),
         values=hypothesis.strategies.one_of(
             hypothesis.strategies.text(),
             hypothesis.strategies.integers(),
