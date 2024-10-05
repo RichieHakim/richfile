@@ -26,7 +26,7 @@ DATA_BASIC = {
     (1, 2, 3): "complex key",
 }
 
-BAD_CHARACTERS = set(["/", "\\", r"\\", ":", "*", "?", "\"", "<", ">", "|",])
+BAD_CHARACTERS = set(["/", "\\", r"\\", ":", "*", "?", "\"", "<", ">", "|",] + [chr(i) for i in range(32)])
 
 
 def save_and_load(file_path, obj):
