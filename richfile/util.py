@@ -435,7 +435,7 @@ def _check_filename_safety(name: str, warn: bool = True, raise_error: bool = Fal
     """
     Checks if a filename is safe to use.
     """
-    issue = list(set(list(name)) & set(["/", "\\", ":", "*", "?", "\"", "<", ">", "|"]))
+    issue = list(set(list(name)) & set(["/", "\\", ":", "*", "?", "\"", "<", ">", "|", "\x00"]))
     n_issues = len(issue)
 
     if n_issues > 0:
@@ -541,6 +541,47 @@ def is_version_compatible(version: str, rules: List[str]) -> bool:
         return version_obj in specifier
     except packaging.version.InvalidVersion:
         raise ValueError(f"Invalid version string: {version}")
+
+
+def is_container_type(obj: Any, type_lookup: Dict) -> bool:
+    """
+    Checks if an object is a container type by seeing if the save function is 'save_container'.
+    """
+    props = type_lookup[type(obj)]
+    function_save = props["function_save"]
+    if function_save.__code__.co_code == save_container.__code__.co_code:
+        return True
+    else:
+        ## Try duck-typing to see if function_save ends up calling save_container
+        try:
+            ## Pass in dummy arguments and obj: empty list
+            import tempfile
+            with tempfile.TemporaryDirectory() as path:
+                function_save(
+                    obj=[],
+                    path=path,
+                    type_name='list',
+                    type_lookup=type_lookup,
+                    check=True,
+                    overwrite=True,
+                    name_dict_items=False,
+                )
+                ## If a file was created, return error
+                if Path(path).is_file():
+                    return FileNotFoundError(f"Folder created as file.")
+                ## Check to see if a folder was created
+                elif not Path(path).is_dir():
+                    return FileNotFoundError(f"Folder not created.")
+                ## If so, check to see if the metadata file was created
+                elif not (Path(path) / FILENAME_METADATA).is_file():
+                    return FileNotFoundError(f"Metadata file not created.") 
+                ## If it worked
+                else:               
+                    return True
+            ## Folder should be deleted after the with statement
+        except Exception as e:
+            return e
+        
 
 
 ####################################################################################################
@@ -651,13 +692,19 @@ class RichFile:
             "force_release_lock": True,
         }
 
+        ## Make sure that the object is a container type
+        is_continer = is_container_type(obj=obj, type_lookup=self.type_lookup)
+        function_save = self.type_lookup[type(obj)]["function_save"]
+        if is_continer != True:
+            raise TypeError(f"Object must be a container type. \nObject failed `is_container_type` test. Found type: {type(obj)}, and `function_save`: {function_save}. \nConsider wrapping the object in a dict (or list, tuple, set, frozenset, or richfile.util.DictItem). \nError: {is_continer}")
+
         ## Create a lock file specific to the target path
         ### Append the lock suffix to the path (don't replace the suffix)
-        path_obj = str(path)
+        path = str(path)
         fn_make_path_tmp  = lambda path: path + '.tmp'
         fn_make_path_lock = lambda path: path + '.lock'
         with SafeSaver(
-            path_target=path_obj,
+            path_target=path,
             path_temp=fn_make_path_tmp(path),
             path_lock=fn_make_path_lock(path),
             **kwargs_safe_saver,
@@ -732,9 +779,21 @@ class RichFile:
                     type_lookup=type_lookup,
                     check=check,
                 )
-            ## If the path is a file, then it is missing a metadata file
+            ## If the path is a file, then it is missing a metadata file. Try to load it using object properties
             elif Path(path).is_file():
-                raise FileNotFoundError(f"Metadata file {FILENAME_METADATA} not found in directory {Path(path).parent}.")
+                props = type_lookup[type(Path(path).suffix)]
+                metadata_obj = {
+                    "type": props["type_name"],
+                    "library": props["library"],
+                    "version": _get_library_version(library=props["library"]),
+                    "index": 0,
+                }
+                return load_element(
+                    path=path,
+                    metadata=metadata_obj,
+                    type_lookup=type_lookup,
+                    check=check,
+                )
             else:
                 raise FileNotFoundError(f"Path {path} not found.")
         else:
@@ -800,6 +859,15 @@ class RichFile:
             raise ValueError(f"Extra arguments: {args_extra}.")
         
         self.register_type(**prop)
+
+    def remove_type(self, type_name: str) -> None:
+        """
+        Removes a type from the type lookup table.
+        """
+        if self.check:
+            if type_name not in self.type_lookup:
+                raise KeyError(f"Type {type_name} not found.")
+        self.type_lookup.remove_property(type_name)
 
     def set_load_kwargs(
         self, 

@@ -1,7 +1,17 @@
 # richfile
 A more natural approach to saving hierarchical data structures.
 
-`richfile` saves any Python object using directory structures on disk, and loads them back again into the same Python objects.
+`richfile` saves any Python object using directory structures on disk, and loads
+them back again into the same Python objects. 
+
+`richfile` can save any atomic Python object, including custom classes, so long
+as you can write a function to save and load it. It is intended as a replacement
+for things like: `pickle`, `json`, `yaml`, `HDF5`, `Parquet`, `netCDF`, `zarr`,
+`numpy`, etc. when you want to save a complex data structure in a human-readable
+and editable format. We find the `richfile` format ideal to use when you are
+building a data processing pipeline and you want to contain intermediate results
+in a format that allows for custom data types, is insensitive to version changes
+(pickling issues), allows for easy debugging, and is human readable.
 
 It is easy to use, the code is simple and pure python, and the operations follow [ACID](https://en.wikipedia.org/wiki/ACID) principles.
 
@@ -22,13 +32,13 @@ data = {
     "age": 25,
     "address": {
         "street": "1234 Elm St",
-        "zip": 62701
+        "zip": None
     },
     "siblings": [
         "Jane",
         "Jim"
     ],
-    "data": np.array([1,2,3]),
+    "data": [1,2,3],
     (1,2,3): "complex key",
 }
 
@@ -88,7 +98,11 @@ Viewing tree structure of richfile at path: ~/path/data.richfile (dict)
 |   
 ├── data.dict_item (dict_item)
 |   ├── key.json (str)
-|   ├── value.npy (numpy_array)
+|   ├── value.list (list)
+|   |   ├── 0.json (int)
+|   |   ├── 1.json (int)
+|   |   ├── 2.json (int)
+|   |   
 |   
 ├── 5.dict_item (dict_item)
 |   ├── key.tuple (tuple)
@@ -97,7 +111,7 @@ Viewing tree structure of richfile at path: ~/path/data.richfile (dict)
 |   |   ├── 2.json (int)
 |   |   
 |   ├── value.json (str)
-|
+|   
 ```
 
 You can also add new data types easily:

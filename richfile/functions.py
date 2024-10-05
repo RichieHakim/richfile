@@ -39,7 +39,7 @@ _TYPE_LOOKUP = [
         "type_name":          "frozenset",
         "function_load":      util.load_folder,
         "function_save":      util.save_container,
-        "object_class":       set,
+        "object_class":       frozenset,
         "suffix":             "frozenset",
         "library":            "python",
         "versions_supported": [">=3", "<4"],
@@ -547,7 +547,7 @@ def remove_type(type_name: str) -> None:
     _TYPE_LOOKUP.pop(idx_to_remove)
 
 
-class Type_container:
+class Container:
     def __init__(
         self,
         type_name: str,
