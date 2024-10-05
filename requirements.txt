@@ -1,3 +1,4 @@
 ## Required
 # numpy
 filelock>3.15
+hypothesis==6.112.2
