@@ -53,7 +53,7 @@ data = rf.RichFile("path/to/data.richfile").load()
 You can also load just a part of the data:
 ```python
 r = rf.RichFile("path/to/data.richfile")
-first_sibling = r["siblings"][0]  ## Lazily load a single item using pythonic indexing
+first_sibling = r["siblings"][0].load()  ## Lazily load a single item using pythonic indexing
 print(f"First sibling: {first_sibling}")
 
 >>> First sibling: Jane
