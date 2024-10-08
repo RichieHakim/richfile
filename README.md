@@ -128,7 +128,7 @@ r.register_type(
 )
 
 ## OR
-## Add type to environment so that all new RichFile objects can use it
+## Add type to the global workspace / kernel so that all new RichFile objects can use it
 rf.functions.register_type(
     type_name='numpy_array',
     function_load=lambda path: np.load(path),
