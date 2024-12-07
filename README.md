@@ -43,7 +43,7 @@ data = {
 }
 
 ## Save it
-import as rf
+import richfile as rf
 r = rf.RichFile("path/to/data.richfile").save(data)
 
 ## Load it back
