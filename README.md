@@ -166,3 +166,4 @@ pip install -e .
 - [ ] Change name of library to something more descriptive
 - [x] Test out memmap stuff
 - [x] ~~Make it a .zip type~~
+- [ ] Add mutability
