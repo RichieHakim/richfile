@@ -88,7 +88,9 @@ def test_lazy_loading():
 @hypothesis.settings(deadline=600)
 @hypothesis.given(
     hypothesis.strategies.dictionaries(
-        keys=hypothesis.strategies.text().filter(lambda x: len([c for c, v in rf.invalid_chars_filename(x).items() if not v]) == 0),
+        keys=hypothesis.strategies.text()
+        .filter(lambda x: len([c for c, v in rf.invalid_chars_filename(x).items() if not v]) == 0)
+        .filter(lambda x: x not in rf.WINDOWS_RESERVED_NAMES),  ## Prevent Windows reserved names
         values=hypothesis.strategies.one_of(
             hypothesis.strategies.text(),
             hypothesis.strategies.integers(),
@@ -96,7 +98,8 @@ def test_lazy_loading():
             hypothesis.strategies.booleans(),
             hypothesis.strategies.none(),
         ),
-    ),
+    )
+    .filter(lambda d: len({k.lower() for k in d.keys()}) == len(d)),  ## Prevent case-only sibling / duplicate keys
 )
 def test_save_load_dict(data):
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -387,3 +390,31 @@ def test_register_type_overwrite():
             r.register_type(**td)
         ## cleanup
         rf.functions.remove_type("custom_type")
+        
+# Windows reserved names should raise a clear ValueError
+def test_save_load_windows_reserved_name(tmp_path):
+    file_path = tmp_path / "test_windows_reserved.richfile"
+    for name in rf.WINDOWS_RESERVED_NAMES:
+        with pytest.raises(ValueError) as excinfo:
+            rf.RichFile(
+                path=file_path, 
+                overwrite=True, 
+                check=True, 
+                name_dict_items=True
+            ).save({name: "value"})
+        assert f"Cannot save folder name" in str(excinfo.value), f"Expected ValueError for {name} not raised. Found: {excinfo.value}"
+
+
+# Case-only sibling keys should raise a ValueError on case-insensitive filesystems
+def test_save_load_case_only_siblings(tmp_path):
+    file_path = tmp_path / "test_case_siblings.richfile"
+    data = {"foo": "value1", "FOO": "value2"}
+    # Expect a ValueError about case-only collisions
+    with pytest.raises(ValueError) as excinfo:
+        rf.RichFile(
+            path=file_path,
+            overwrite=True,
+            check=True,
+            name_dict_items=True
+        ).save(data)
+    assert "Found case-only" in str(excinfo.value)

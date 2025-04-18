@@ -88,10 +88,11 @@ import filelock
 import os
 from contextlib import ExitStack
 import unicodedata
+import sys
 
 from . import functions
 from . import __version__ as VERSION_RICHFILE
-from . import VERSIONS_RICHFILE_SUPPORTED, PYTHON_VERSIONS_SUPPORTED, FILENAME_METADATA, FILENAME_TYPELOOKUP, JSON_INDENT
+from . import VERSIONS_RICHFILE_SUPPORTED, PYTHON_VERSIONS_SUPPORTED, FILENAME_METADATA, FILENAME_TYPELOOKUP, JSON_INDENT, WINDOWS_RESERVED_NAMES
 
 
 REQUIREMENTS = {
@@ -190,7 +191,7 @@ def load_folder(
         # Check that all elements in metadata are present in the folder and vice versa
         if not all(name in names_path_elements for name in names_meta_sorted):
             missing_elements = set(names_meta_sorted) - set(names_path_elements)
-            raise FileNotFoundError(f"Elements in metadata not found in folder: {missing_elements}")
+            raise FileNotFoundError(f"Elements in metadata not found in folder: {missing_elements}, names_meta: {names_meta_sorted}, names_path: {names_path_elements}, path: {path}")
         if not all(name in names_meta_sorted for name in names_path_elements):
             extra_elements = set(names_path_elements) - set(names_meta_sorted)
             raise ValueError(f"Extra elements in folder not found in metadata: {extra_elements}")        
@@ -343,8 +344,21 @@ def save_object(
     props = type_lookup[type(obj)]
     type_object = props["type_name"]
 
-    _prepare_save_path(path=path, overwrite=overwrite, mkdir=True)
+    ## Make directory if it doesn't exist
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    
     if check:
+        ## Check illegal Windows folder names
+        stem = Path(path).stem
+        if stem.upper() in WINDOWS_RESERVED_NAMES:
+            raise ValueError((f"ERROR: Cannot save folder named with stem: '{stem}': "
+                "Windows reserves names like COM1-9, LPT1-9, CON, PRN, AUX, NUL, etc.  "
+                "Either rename your file/dict key or set name_dict_items=False or set check=False."))
+        
+        ## Check for overwriting
+        if Path(path).exists() and not overwrite:
+            raise FileExistsError(f"Path already exists: {path}")
+
         library_version = _get_library_version(props["library"])
         if props["library"] in type_lookup:
             if not is_version_compatible(version=library_version, rules=type_lookup[props["library"]]["versions_supported"]):
@@ -383,6 +397,7 @@ def save_container(
     Saves a list, tuple, set, frozenset, or dict_item to the given directory.
     """
     if isinstance(obj, dict):
+        _check_case_only_sibling_keys(obj=obj) if check else None     
         obj = [DictItem(key=key, value=value) for key, value in obj.items()]
 
     metadata_elements = {}
@@ -446,12 +461,20 @@ def _check_filename_safety(name: str, warn: bool = True, raise_error: bool = Fal
         if raise_error:
             raise ValueError(f"Filename contains invalid character: {bad_chars}. Name: {name}")
 
+def _check_case_only_sibling_keys(obj: Dict) -> None:
+    """
+    Checks if there are any case-only sibling keys in the dictionary.
+    """
+    ## Check that there are no case-only sibling keys
+    str_keys = [k for k in obj.keys() if isinstance(k, str)]
+    str_keys_lower = [key.lower() for key in str_keys]
+    case_only_siblings = [key for key in str_keys if str_keys_lower.count(key.lower()) > 1]
+    if len(case_only_siblings) > 0:
+        raise ValueError((f"ERROR: Found case-only sibling keys in dict: '{obj}'."
+                        f"Tried to save dict with keys '{str_keys}' but found case-only sibling(s) named {[str(c) for c in case_only_siblings]}. "
+                        "These are illegal on MacOS and Windows because their filesystems are case-insensitive."
+                        "Either rename your file/dict key or set name_dict_items=False or set check=False."))
 
-def _prepare_save_path(path: Union[str, Path], overwrite: bool = False, mkdir: bool = True) -> None:
-    if Path(path).exists() and not overwrite:
-        raise FileExistsError(f"Path already exists: {path}.")
-    if mkdir:
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
 
 def save_metadata(
     metadata: Dict,
