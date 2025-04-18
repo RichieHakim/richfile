@@ -2,9 +2,6 @@ from typing import Optional, Union
 
 from pathlib import Path
 
-import numpy as np
-import scipy.sparse
-
 import richfile as rf
 
 class RichFile_data(rf.RichFile):
@@ -16,52 +13,167 @@ class RichFile_data(rf.RichFile):
     ):
         super().__init__(path=path, check=check, safe_save=safe_save)
 
-
+        type_dicts = []
+        
         ## NUMPY ARRAY
-        import numpy as np
+        try:
+            import numpy as np
 
-        def save_npy_array(
-            obj: np.ndarray,
-            path: Union[str, Path],
-            **kwargs,
-        ) -> None:
-            """
-            Saves a NumPy array to the given path.
-            """
-            np.save(path, obj, **kwargs)
+            def save_npy_array(
+                obj: np.ndarray,
+                path: Union[str, Path],
+                **kwargs,
+            ) -> None:
+                """
+                Saves a NumPy array to the given path.
+                """
+                np.save(path, obj, **kwargs)
 
-        def load_npy_array(
-            path: Union[str, Path],
-            **kwargs,
-        ) -> np.ndarray:
-            """
-            Loads an array from the given path.
-            """    
-            return np.load(path, **kwargs)
+            def load_npy_array(
+                path: Union[str, Path],
+                **kwargs,
+            ) -> np.ndarray:
+                """
+                Loads an array from the given path.
+                """    
+                return np.load(path, **kwargs)
+            
+            type_dicts.append(
+                {
+                    "type_name":          "numpy_array",
+                    "function_load":      load_npy_array,
+                    "function_save":      save_npy_array,
+                    "object_class":       np.ndarray,
+                    "suffix":             "npy",
+                    "library":            "numpy",
+                    "versions_supported": [],
+                },
+                {
+                    "type_name":          "numpy_scalar",
+                    "function_load":      load_npy_array,
+                    "function_save":      save_npy_array,
+                    "object_class":       np.number,
+                    "suffix":             "npy",
+                    "library":            "numpy",
+                    "versions_supported": [],
+                },
+            )
+        except ImportError:
+            pass
         
 
         ## SCIPY SPARSE MATRIX
-        import scipy.sparse
+        try:
+            import scipy.sparse
 
-        def save_sparse_array(
-            obj: scipy.sparse.spmatrix,
-            path: Union[str, Path],
-            **kwargs,
-        ) -> None:
-            """
-            Saves a SciPy sparse matrix to the given path.
-            """
-            scipy.sparse.save_npz(path, obj, **kwargs)
+            def save_sparse_array(
+                obj: scipy.sparse.spmatrix,
+                path: Union[str, Path],
+                **kwargs,
+            ) -> None:
+                """
+                Saves a SciPy sparse matrix to the given path.
+                """
+                scipy.sparse.save_npz(path, obj, **kwargs)
 
-        def load_sparse_array(
-            path: Union[str, Path],
-            **kwargs,
-        ) -> scipy.sparse.csr_matrix:
-            """
-            Loads a sparse array from the given path.
-            """        
-            return scipy.sparse.load_npz(path, **kwargs)
+            def load_sparse_array(
+                path: Union[str, Path],
+                **kwargs,
+            ) -> scipy.sparse.csr_matrix:
+                """
+                Loads a sparse array from the given path.
+                """        
+                return scipy.sparse.load_npz(path, **kwargs)
+            
+            type_dicts.append(
+                {
+                    "type_name":          "scipy_sparse_array",
+                    "function_load":      load_sparse_array,
+                    "function_save":      save_sparse_array,
+                    "object_class":       scipy.sparse.spmatrix,
+                    "suffix":             "npz",
+                    "library":            "scipy",
+                    "versions_supported": [],
+                },
+            )
+        except ImportError:
+            pass
         
+        ## TORCH TENSOR
+        try:
+            import torch
+
+            def save_torch_tensor(
+                obj: torch.Tensor,
+                path: Union[str, Path],
+                **kwargs,
+            ) -> None:
+                """
+                Saves a PyTorch tensor to the given path as a NumPy array.
+                """
+                np.save(path, obj.detach().cpu().numpy(), **kwargs)
+
+            def load_torch_tensor(
+                path: Union[str, Path],
+                **kwargs,
+            ) -> torch.Tensor:
+                """
+                Loads a PyTorch tensor from the given path.
+                """
+                return torch.from_numpy(np.load(path, **kwargs))
+            
+            type_dicts.append(
+                {
+                    "type_name":          "torch_tensor",
+                    "function_load":      load_torch_tensor,
+                    "function_save":      save_torch_tensor,
+                    "object_class":       torch.Tensor,
+                    "suffix":             "npy",
+                    "library":            "torch",
+                    "versions_supported": [],
+                },
+            )
+        except ImportError:
+            pass
+
+        ## PANDAS DATAFRAME
+        try:
+            import pandas as pd
+            
+            def save_pandas_dataframe(
+                obj: pd.DataFrame,
+                path: Union[str, Path],
+                **kwargs,
+            ) -> None:
+                """
+                Saves a Pandas DataFrame to the given path.
+                """
+                ## Save as a CSV file
+                obj.to_csv(path, index=True, **kwargs)
+
+            def load_pandas_dataframe(
+                path: Union[str, Path],
+                **kwargs,
+            ) -> pd.DataFrame:
+                """
+                Loads a Pandas DataFrame from the given path.
+                """
+                ## Load as a CSV file
+                return pd.read_csv(path, index_col=0, **kwargs)
+            
+            type_dicts.append(
+                {
+                    "type_name":          "pandas_dataframe",
+                    "function_load":      load_pandas_dataframe,
+                    "function_save":      save_pandas_dataframe,
+                    "object_class":       pd.DataFrame,
+                    "suffix":             "csv",
+                    "library":            "pandas",
+                    "versions_supported": [],
+                },
+            )
+        except ImportError:
+            pass
 
         ## JSON DICT
         import collections
@@ -109,81 +221,8 @@ class RichFile_data(rf.RichFile):
             """
             with open(path, 'r') as f:
                 return JSON_List(json.load(f, **kwargs))
-        
-        ## TORCH TENSOR
-        import torch
-
-        def save_torch_tensor(
-            obj: torch.Tensor,
-            path: Union[str, Path],
-            **kwargs,
-        ) -> None:
-            """
-            Saves a PyTorch tensor to the given path as a NumPy array.
-            """
-            np.save(path, obj.detach().cpu().numpy(), **kwargs)
-
-        def load_torch_tensor(
-            path: Union[str, Path],
-            **kwargs,
-        ) -> torch.Tensor:
-            """
-            Loads a PyTorch tensor from the given path.
-            """
-            return torch.from_numpy(np.load(path, **kwargs))
-
-        ## PANDAS DATAFRAME
-        import pandas as pd
-        
-        def save_pandas_dataframe(
-            obj: pd.DataFrame,
-            path: Union[str, Path],
-            **kwargs,
-        ) -> None:
-            """
-            Saves a Pandas DataFrame to the given path.
-            """
-            ## Save as a CSV file
-            obj.to_csv(path, index=True, **kwargs)
-
-        def load_pandas_dataframe(
-            path: Union[str, Path],
-            **kwargs,
-        ) -> pd.DataFrame:
-            """
-            Loads a Pandas DataFrame from the given path.
-            """
-            ## Load as a CSV file
-            return pd.read_csv(path, index_col=0, **kwargs)
-
-        type_dicts = [
-            {
-                "type_name":          "numpy_array",
-                "function_load":      load_npy_array,
-                "function_save":      save_npy_array,
-                "object_class":       np.ndarray,
-                "suffix":             "npy",
-                "library":            "numpy",
-                "versions_supported": [],
-            },
-            {
-                "type_name":          "numpy_scalar",
-                "function_load":      load_npy_array,
-                "function_save":      save_npy_array,
-                "object_class":       np.number,
-                "suffix":             "npy",
-                "library":            "numpy",
-                "versions_supported": [],
-            },
-            {
-                "type_name":          "scipy_sparse_array",
-                "function_load":      load_sparse_array,
-                "function_save":      save_sparse_array,
-                "object_class":       scipy.sparse.spmatrix,
-                "suffix":             "npz",
-                "library":            "scipy",
-                "versions_supported": [],
-            },
+            
+        type_dicts.append(
             {
                 "type_name":          "json_dict",
                 "function_load":      load_json_dict,
@@ -202,25 +241,7 @@ class RichFile_data(rf.RichFile):
                 "library":            "python",
                 "versions_supported": [],
             },
-            {
-                "type_name":          "torch_tensor",
-                "function_load":      load_torch_tensor,
-                "function_save":      save_torch_tensor,
-                "object_class":       torch.Tensor,
-                "suffix":             "npy",
-                "library":            "torch",
-                "versions_supported": [],
-            },
-            {
-                "type_name":          "pandas_dataframe",
-                "function_load":      load_pandas_dataframe,
-                "function_save":      save_pandas_dataframe,
-                "object_class":       pd.DataFrame,
-                "suffix":             "csv",
-                "library":            "pandas",
-                "versions_supported": [],
-            },
-        ]
+        )
 
         [self.register_type_from_dict(d) for d in type_dicts]
         
