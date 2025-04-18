@@ -9,5 +9,6 @@ FILENAME_TYPELOOKUP = ".typelookup.richfile"
 JSON_INDENT = 4
 
 ## Import important stuff from util.py into top-level namespace
-from . import functions, util, demo
+from . import functions, util
 from .util import RichFile, load_folder, load_element, load_folder_metadata, save_object, invalid_chars_filename
+from . import demo
