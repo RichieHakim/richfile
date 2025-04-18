@@ -397,7 +397,7 @@ def save_container(
     Saves a list, tuple, set, frozenset, or dict_item to the given directory.
     """
     if isinstance(obj, dict):
-        _check_case_only_sibling_keys(obj=obj) if check else None     
+        _check_case_only_sibling_keys(obj=obj) if check and (name_dict_items) else None 
         obj = [DictItem(key=key, value=value) for key, value in obj.items()]
 
     metadata_elements = {}
