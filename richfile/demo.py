@@ -38,7 +38,7 @@ class RichFile_data(rf.RichFile):
                 """    
                 return np.load(path, **kwargs)
             
-            type_dicts.append(
+            type_dicts.extend([
                 {
                     "type_name":          "numpy_array",
                     "function_load":      load_npy_array,
@@ -57,7 +57,7 @@ class RichFile_data(rf.RichFile):
                     "library":            "numpy",
                     "versions_supported": [],
                 },
-            )
+            ])
         except ImportError:
             pass
         
@@ -85,7 +85,7 @@ class RichFile_data(rf.RichFile):
                 """        
                 return scipy.sparse.load_npz(path, **kwargs)
             
-            type_dicts.append(
+            type_dicts.extend([
                 {
                     "type_name":          "scipy_sparse_array",
                     "function_load":      load_sparse_array,
@@ -95,7 +95,7 @@ class RichFile_data(rf.RichFile):
                     "library":            "scipy",
                     "versions_supported": [],
                 },
-            )
+            ])
         except ImportError:
             pass
         
@@ -122,7 +122,7 @@ class RichFile_data(rf.RichFile):
                 """
                 return torch.from_numpy(np.load(path, **kwargs))
             
-            type_dicts.append(
+            type_dicts.extend([
                 {
                     "type_name":          "torch_tensor",
                     "function_load":      load_torch_tensor,
@@ -132,7 +132,7 @@ class RichFile_data(rf.RichFile):
                     "library":            "torch",
                     "versions_supported": [],
                 },
-            )
+            ])
         except ImportError:
             pass
 
@@ -161,7 +161,7 @@ class RichFile_data(rf.RichFile):
                 ## Load as a CSV file
                 return pd.read_csv(path, index_col=0, **kwargs)
             
-            type_dicts.append(
+            type_dicts.extend([
                 {
                     "type_name":          "pandas_dataframe",
                     "function_load":      load_pandas_dataframe,
@@ -171,7 +171,7 @@ class RichFile_data(rf.RichFile):
                     "library":            "pandas",
                     "versions_supported": [],
                 },
-            )
+            ])
         except ImportError:
             pass
 
@@ -222,7 +222,7 @@ class RichFile_data(rf.RichFile):
             with open(path, 'r') as f:
                 return JSON_List(json.load(f, **kwargs))
             
-        type_dicts.append(
+        type_dicts.extend([
             {
                 "type_name":          "json_dict",
                 "function_load":      load_json_dict,
@@ -241,7 +241,7 @@ class RichFile_data(rf.RichFile):
                 "library":            "python",
                 "versions_supported": [],
             },
-        )
+        ])
 
         [self.register_type_from_dict(d) for d in type_dicts]
         
