@@ -35,7 +35,7 @@ jobs:
           # ubuntu-20.04,
           windows-latest,
           windows-2022,
-          windows-2019,
+          # windows-2019,  ## deprecated
           macos-latest,
           macos-14,
           # macos-11.0,  ## eva-decord fails on macos-11
@@ -47,6 +47,7 @@ jobs:
           "3.11",
           "3.12",
           "3.13",
+          "3.14",
         ]
         # extra: [
         #   core_cv2Headless,
