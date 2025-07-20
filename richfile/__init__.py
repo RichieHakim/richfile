@@ -1,4 +1,4 @@
-__version__ = "0.5.2"
+__version__ = "0.5.3"
 
 VERSIONS_RICHFILE_SUPPORTED = [">=0.3.1", "<1.0.0"]
 PYTHON_VERSIONS_SUPPORTED = [">=3", "<4"]
@@ -12,6 +12,10 @@ WINDOWS_RESERVED_NAMES = {
     "CON", "PRN", "AUX", "NUL",
     *{f"COM{i}" for i in range(1, 10)},
     *{f"LPT{i}" for i in range(1, 10)},
+}
+
+NAMES_EXTRA_FILES_ALLOWED = {
+    ".DS_Store",
 }
 
 

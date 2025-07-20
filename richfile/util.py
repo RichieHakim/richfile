@@ -92,7 +92,7 @@ import sys
 
 from . import functions
 from . import __version__ as VERSION_RICHFILE
-from . import VERSIONS_RICHFILE_SUPPORTED, PYTHON_VERSIONS_SUPPORTED, FILENAME_METADATA, FILENAME_TYPELOOKUP, JSON_INDENT, WINDOWS_RESERVED_NAMES
+from . import VERSIONS_RICHFILE_SUPPORTED, PYTHON_VERSIONS_SUPPORTED, FILENAME_METADATA, FILENAME_TYPELOOKUP, JSON_INDENT, WINDOWS_RESERVED_NAMES, NAMES_EXTRA_FILES_ALLOWED
 
 
 REQUIREMENTS = {
@@ -186,14 +186,15 @@ def load_folder(
         
     ## Sort the element names by their index
     names_meta_sorted = _sort_element_names_by_index(metadata=metadata, check=check)
+    names_allowed = set(names_meta_sorted) | set(NAMES_EXTRA_FILES_ALLOWED)
 
     if check:
         # Check that all elements in metadata are present in the folder and vice versa
         if not all(name in names_path_elements for name in names_meta_sorted):
             missing_elements = set(names_meta_sorted) - set(names_path_elements)
             raise FileNotFoundError(f"Elements in metadata not found in folder: {missing_elements}, names_meta: {names_meta_sorted}, names_path: {names_path_elements}, path: {path}")
-        if not all(name in names_meta_sorted for name in names_path_elements):
-            extra_elements = set(names_path_elements) - set(names_meta_sorted)
+        if not all(name in names_allowed for name in names_path_elements):
+            extra_elements = set(names_path_elements) - set(names_allowed)
             raise ValueError(f"Extra elements in folder not found in metadata: {extra_elements}")        
 
     ## Load each element in the order specified by the metadata index
