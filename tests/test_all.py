@@ -4,6 +4,7 @@ from pathlib import Path
 import copy
 import os
 import math
+import json
 import warnings
 
 import pytest
@@ -335,7 +336,6 @@ def test_save_unsupported_type():
             rf.RichFile(file_path).save(math)
 
 def test_load_corrupted_file():
-    import json
     with tempfile.TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "corrupted_file.richfile"
         ## Save good json data
@@ -347,6 +347,20 @@ def test_load_corrupted_file():
         ## Load the file
         with pytest.raises(json.JSONDecodeError):
             r.load()
+
+
+def test_keys_raises_on_corrupted_metadata_when_check_true_directory_backend():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        path = Path(temp_dir) / "corrupted_keys.richfile"
+        rf.RichFile(path).save({"data": 42})
+
+        path_metadata = Path(path) / rf.FILENAME_METADATA
+        path_metadata.write_text("not-json")
+
+        with pytest.raises(json.JSONDecodeError):
+            rf.RichFile(path=path, check=True).keys()
+
+        assert rf.RichFile(path=path, check=False).keys() == []
 
 # Edge case tests
 def test_save_empty_dict():

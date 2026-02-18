@@ -4,7 +4,7 @@ import inspect
 import warnings
 import importlib
 
-from . import util
+from . import conversion, util
 
 
 _TYPE_LOOKUP = [
@@ -545,6 +545,73 @@ def remove_type(type_name: str) -> None:
     idx_to_remove = [idx for idx, prop in enumerate(_TYPE_LOOKUP) if prop["type_name"] == type_name][0]
     ## Remove the type_name
     _TYPE_LOOKUP.pop(idx_to_remove)
+
+
+def convert_backend(
+    path_source: Union[str, Path],
+    backend_source: str,
+    path_target: Union[str, Path],
+    backend_target: str,
+    overwrite: bool = False,
+    mode: str = "raw",
+    check: bool = True,
+    type_lookup: Optional[Any] = None,
+) -> Path:
+    """
+    Convert a richfile payload from one backend to another.
+
+    This is a thin wrapper around :func:`richfile.conversion.convert_backend`.
+    """
+    return conversion.convert_backend(
+        path_source=path_source,
+        backend_source=backend_source,
+        path_target=path_target,
+        backend_target=backend_target,
+        overwrite=overwrite,
+        mode=mode,
+        check=check,
+        type_lookup=type_lookup,
+    )
+
+
+def extract_backend_to_directory(
+    path_source: Union[str, Path],
+    backend_source: str,
+    path_directory_out: Union[str, Path],
+    overwrite: bool = False,
+) -> Path:
+    """
+    Extract a backend payload to directory-style richfile files.
+
+    This is a thin wrapper around
+    :func:`richfile.conversion.extract_backend_to_directory`.
+    """
+    return conversion.extract_backend_to_directory(
+        path_source=path_source,
+        backend_source=backend_source,
+        path_directory_out=path_directory_out,
+        overwrite=overwrite,
+    )
+
+
+def pack_directory_to_backend(
+    path_directory_in: Union[str, Path],
+    backend_target: str,
+    path_target: Union[str, Path],
+    overwrite: bool = False,
+) -> Path:
+    """
+    Pack a directory-style richfile tree into a target backend.
+
+    This is a thin wrapper around
+    :func:`richfile.conversion.pack_directory_to_backend`.
+    """
+    return conversion.pack_directory_to_backend(
+        path_directory_in=path_directory_in,
+        backend_target=backend_target,
+        path_target=path_target,
+        overwrite=overwrite,
+    )
 
 
 class Container:

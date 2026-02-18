@@ -55,7 +55,7 @@ setup(
     long_description_content_type='text/markdown',
     url='https://github.com/RichieHakim/richfile',
 
-    packages=['richfile'],
+    packages=['richfile', 'richfile.backends'],
 
     install_requires=list(deps_all_dict.values()),
     # extras_require=,
