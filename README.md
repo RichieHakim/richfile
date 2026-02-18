@@ -5,13 +5,10 @@ A more natural approach to saving hierarchical data structures.
 Python objects.
 
 Four backends are available:
-- `backend="directory"`: classic richfile directory trees.
+- `backend="directory"`: classic richfile directory trees (default).
 - `backend="sqlar"`: single-file SQLite archive (`.sqlar`) with no compression.
 - `backend="zip"`: single-file ZIP archive (`.zip`) in stored mode (no compression).
 - `backend="tar"`: single-file plain TAR archive (`.tar`) with no compression.
-
-Backend auto-detection is also available:
-- `backend="auto"` (default): detect backend from existing path for load/query operations.
 
 `richfile` can save any atomic Python object, including custom classes, so long
 as you can write a function to save and load it. It is intended as a replacement
@@ -53,11 +50,19 @@ data = {
 
 ## Save it
 import richfile as rf
-r = rf.RichFile("path/to/data.richfile", backend="directory").save(data)
+r = rf.RichFile("path/to/data.richfile").save(data)
 
 ## Load it back
-data = rf.RichFile("path/to/data.richfile", backend="directory").load()
+data = rf.RichFile("path/to/data.richfile").load()
 ```
+
+### Backends
+
+By default, `richfile` will use the `'directory'` backend. However, you can use other backends:
+- `'directory'`: places the contents into a directory. Slow saving, fast loading. Unwieldy when there are many leaf elements.
+- `'sqlar'`: single-file SQLite archive (`.sqlar`). Best general use choice. Fast and allows for random access, but does not allow easy navigating in a file browser.
+- `'zip'`: single-file ZIP archive (`.zip`) in stored mode (no compression). Slower than sqlar, but still performant, and easy to handle.
+- `'tar'`: single-file plain TAR archive (`.tar`) with no compression. Slower than sqlar, but still performant, and fairly easy to handle.
 
 Save and load using the SQLAR backend:
 ```python
@@ -65,17 +70,6 @@ import richfile as rf
 
 rf.RichFile("path/to/data.sqlar", backend="sqlar").save(data)
 data = rf.RichFile("path/to/data.sqlar", backend="sqlar").load()
-```
-
-Save and load using ZIP/TAR backends:
-```python
-import richfile as rf
-
-rf.RichFile("path/to/data.zip", backend="zip").save(data)
-data_zip = rf.RichFile("path/to/data.zip", backend="zip").load()
-
-rf.RichFile("path/to/data.tar", backend="tar").save(data)
-data_tar = rf.RichFile("path/to/data.tar", backend="tar").load()
 ```
 
 Convert between backends (raw byte-preserving conversion):
@@ -111,7 +105,7 @@ rf.convert_backend(
 
 You can also load just a part of the data:
 ```python
-r = rf.RichFile("path/to/data.richfile", backend="directory")
+r = rf.RichFile("path/to/data.richfile")  ## Path to an existing richfile
 first_sibling = r["siblings"][0].load()  ## Lazily load a single item using pythonic indexing
 print(f"First sibling: {first_sibling}")
 
@@ -176,7 +170,7 @@ Viewing tree structure of richfile at path: ~/path/data.richfile (dict)
 You can also add new data types easily:
 ```python
 ## Add type to a RichFile object
-r = rf.RichFile("path/to/data.richfile", backend="directory")
+r = rf.RichFile("path/to/data.richfile")
 r.register_type(
     type_name='numpy_array',
     function_load=lambda path: np.load(path),
@@ -216,7 +210,7 @@ pip install -e .
 - **Backend conversion**: `convert_backend(..., mode="raw")` performs byte-preserving layout conversion and does not deserialize objects. `mode="semantic"` performs `load()` + `save()` and requires matching type registrations.
 
 ## TODO:
-- [ ] Tests
+- [x] Tests
 - [ ] Documentation
 - [x] Examples
 - [x] Readme
