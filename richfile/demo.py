@@ -38,6 +38,25 @@ class RichFile_data(rf.RichFile):
                 """    
                 return np.load(path, **kwargs)
             
+            def save_npy_scalar(
+                obj: np.number,
+                path: Union[str, Path],
+                **kwargs,
+            ) -> None:
+                """
+                Saves a NumPy scalar to the given path.
+                """
+                np.save(path, np.array(obj), **kwargs)
+
+            def load_npy_scalar(
+                path: Union[str, Path],
+                **kwargs,
+            ) -> np.number:
+                """
+                Loads a NumPy scalar from the given path.
+                """
+                return np.load(path, **kwargs).item()
+
             type_dicts.extend([
                 {
                     "type_name":          "numpy_array",
@@ -50,8 +69,8 @@ class RichFile_data(rf.RichFile):
                 },
                 {
                     "type_name":          "numpy_scalar",
-                    "function_load":      load_npy_array,
-                    "function_save":      save_npy_array,
+                    "function_load":      load_npy_scalar,
+                    "function_save":      save_npy_scalar,
                     "object_class":       np.number,
                     "suffix":             "npy",
                     "library":            "numpy",
