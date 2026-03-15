@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "richfile"
+dynamic = ["version"]
+description = "A library for reading and writing hierarchical data files"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [
+    {name = "Richard Hakim", email = "richhakim@gmail.com"},
+]
+keywords = ["data analysis", "machine learning", "neuroscience", "serialization"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+]
+
+dependencies = [
+    "filelock>3.15",
+]
+
+[project.optional-dependencies]
+test = [
+    "hypothesis",
+    "pytest",
+]
+
+[project.urls]
+Homepage = "https://github.com/RichieHakim/richfile"
+Repository = "https://github.com/RichieHakim/richfile"
+Issues = "https://github.com/RichieHakim/richfile/issues"
+
+[tool.setuptools.dynamic]
+version = {attr = "richfile.__version__"}
+
+[tool.setuptools.packages.find]
+include = ["richfile*"]

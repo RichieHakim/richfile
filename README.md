@@ -1,36 +1,31 @@
 # richfile
+
+[![PyPI](https://img.shields.io/pypi/v/richfile)](https://pypi.org/project/richfile/)
+[![Python](https://img.shields.io/badge/python-%E2%89%A53.10-blue)](https://pypi.org/project/richfile/)
+[![Build](https://github.com/RichieHakim/richfile/actions/workflows/build.yml/badge.svg)](https://github.com/RichieHakim/richfile/actions/workflows/build.yml)
+
 A more natural approach to saving hierarchical data structures.
 
 `richfile` saves any Python object to disk and loads it back into the same
-Python objects.
+Python objects. It can save any atomic Python object, including custom classes,
+so long as it's possible to write a function to save and load it.
 
-Four backends are available:
-- `backend="directory"`: classic richfile directory trees (default).
-- `backend="sqlar"`: single-file SQLite archive (`.sqlar`) with no compression.
-- `backend="zip"`: single-file ZIP archive (`.zip`) in stored mode (no compression).
-- `backend="tar"`: single-file plain TAR archive (`.tar`) with no compression.
+It is intended as a replacement for `pickle`, `json`, `yaml`, `HDF5`, etc. when
+you want to save a complex data structure in a format that:
+- Supports **custom data types** (numpy arrays, sparse matrices, torch tensors, etc.)
+- Is **insensitive to version changes** (no pickling issues)
+- Allows **lazy loading** of individual elements
+- Supports **human-readable inspection** of directory and zip-style richfiles
+- Follows [**ACID**](https://en.wikipedia.org/wiki/ACID) principles
 
-`richfile` can save any atomic Python object, including custom classes, so long
-as you can write a function to save and load it. It is intended as a replacement
-for things like: `pickle`, `json`, `yaml`, `HDF5`, `Parquet`, `netCDF`, `zarr`,
-`numpy`, etc. when you want to save a complex data structure in a human-readable
-and editable format. We find the `richfile` format ideal to use when you are
-building a data processing pipeline and you want to contain intermediate results
-in a format that allows for custom data types, is insensitive to version changes
-(pickling issues), allows for easy debugging, and is human readable.
-
-It is easy to use, the code is simple and pure python, and the operations follow [ACID](https://en.wikipedia.org/wiki/ACID) principles.
+The code is simple, pure Python, and easy to use.
 
 ## Installation
 ```bash
 pip install richfile
 ```
 
-## Examples
-Try out the examples in the [demo_notebook.ipynb](https://github.com/RichieHakim/richfile/blob/main/demo_notebook.ipynb) file.
-
-## Usage
-Saving and loading data is simple:
+## Quick Start
 ```python
 ## Given some complex data structure
 data = {
@@ -56,15 +51,19 @@ r = rf.RichFile("path/to/data.richfile").save(data)
 data = rf.RichFile("path/to/data.richfile").load()
 ```
 
-### Backends
+## Backends
 
-By default, `richfile` will use the `'directory'` backend. However, you can use other backends:
-- `'directory'`: places the contents into a directory. Slow saving, fast loading. Unwieldy when there are many leaf elements.
-- `'sqlar'`: single-file SQLite archive (`.sqlar`). Best general use choice. Fast and allows for random access, but does not allow easy navigating in a file browser.
-- `'zip'`: single-file ZIP archive (`.zip`) in stored mode (no compression). Slower than sqlar, but still performant, and easy to handle.
-- `'tar'`: single-file plain TAR archive (`.tar`) with no compression. Slower than sqlar, but still performant, and fairly easy to handle.
+Four storage backends are available. Pass `backend=` when creating a `RichFile`:
 
-Save and load using the SQLAR backend:
+| Backend | Format | Best for |
+|---------|--------|----------|
+| `"directory"` | Directory tree (default) | Debugging, human inspection |
+| `"sqlar"` | SQLite archive (`.sqlar`) | General use — fast, single file, random access |
+| `"zip"` | ZIP stored (`.zip`) | Sharing — universally recognized format |
+| `"tar"` | Plain TAR (`.tar`) | Interop with Unix tooling |
+
+When loading, `backend="auto"` (the default) detects the format from magic bytes.
+
 ```python
 import richfile as rf
 
@@ -72,7 +71,7 @@ rf.RichFile("path/to/data.sqlar", backend="sqlar").save(data)
 data = rf.RichFile("path/to/data.sqlar", backend="sqlar").load()
 ```
 
-Convert between backends (raw byte-preserving conversion):
+## Converting Between Backends
 ```python
 import richfile as rf
 
@@ -103,7 +102,7 @@ rf.convert_backend(
 )
 ```
 
-You can also load just a part of the data:
+## Lazy Loading
 ```python
 r = rf.RichFile("path/to/data.richfile")  ## Path to an existing richfile
 first_sibling = r["siblings"][0].load()  ## Lazily load a single item using pythonic indexing
@@ -112,7 +111,9 @@ print(f"First sibling: {first_sibling}")
 >>> First sibling: Jane
 ```
 
-View the contents of a richfile directory without loading it:
+## Inspecting Contents
+
+View the structure of a richfile without loading data:
 ```python
 r.view_directory_tree()
 ```
@@ -167,7 +168,9 @@ Viewing tree structure of richfile at path: ~/path/data.richfile (dict)
 |   
 ```
 
-You can also add new data types easily:
+## Custom Types
+
+Register your own types by providing save/load functions:
 ```python
 ## Add type to a RichFile object
 r = rf.RichFile("path/to/data.richfile")
@@ -200,29 +203,13 @@ pip install -e .
 ```
 
 ## Considerations and Limitations
-- **Inversibility**: When creating custom data types, it is important to consider whether the saving and loading operations are exactly reversible.
-- [**ACID**](https://en.wikipedia.org/wiki/ACID) principles are reasonably followed via the use of temporary files, file locks, and atomic operations. However, the library is not a database, and therefore cannot guarantee the same level of ACID compliance as a database. In addition, atomic replacements of existing non-empty directories require two operations, which reduces atomicity.
-- **Backend selection**: You can pass backend explicitly (`"directory"`, `"sqlar"`, `"zip"`, `"tar"`), or rely on `backend="auto"` for loading from existing paths. Path suffixes remain informational only.
-- **Archive performance tradeoff**: SQLAR/ZIP/TAR store raw bytes without compression in v1 for faster save behavior. This can increase on-disk size compared with compressed formats.
-- **Archive scope in v1**: SQLAR/ZIP/TAR currently support root-object save and lazy/query load behavior. Nested path mutation/append APIs are intentionally deferred.
-- **TAR scope in v1**: TAR backend writes plain `.tar` only (no `.tar.gz`, `.tgz`, `.tar.bz2`, or `.tar.xz` output modes).
-- **Custom type compatibility in archive backends**: Custom `function_save(path, ...)` and `function_load(path, ...)` callbacks are supported via a selective temporary-path bridge when needed.
-- **Backend conversion**: `convert_backend(..., mode="raw")` performs byte-preserving layout conversion and does not deserialize objects. `mode="semantic"` performs `load()` + `save()` and requires matching type registrations.
+- **Inversibility**: When creating custom data types, ensure the save/load operations are exactly reversible.
+- [**ACID**](https://en.wikipedia.org/wiki/ACID) principles are followed via temporary files, file locks, and atomic operations. However, `richfile` is not a database — atomic replacement of existing non-empty directories requires two operations, which reduces atomicity guarantees.
+- **No compression**: Archive backends (SQLAR/ZIP/TAR) store raw bytes without compression for faster I/O. On-disk size may be larger than compressed formats.
+- **Archive mutation**: Archive backends support full save and lazy load. Nested path mutation (modifying a single element within an existing archive) is not yet supported.
+- **TAR format**: Writes plain `.tar` only (no `.tar.gz` or `.tar.bz2`).
+- **Backend detection**: `backend="auto"` detects format from magic bytes, not file extension. You can also pass the backend explicitly.
+- **Conversion**: `convert_backend(..., mode="raw")` is byte-preserving and does not deserialize objects. `mode="semantic"` round-trips through `load()`/`save()` and requires matching type registrations.
 
-## TODO:
-- [x] Tests
-- [ ] Documentation
-- [x] Examples
-- [x] Readme
-- [ ] License
-- [x] PyPi
-- [x] ~~Hashing~~
-- [x] ~~Item assignment (safely)~~
-- [x] Custom saving/loading functions
-- [x] ~~Put the library imports in the function calls~~
-- [x] Add handling for data without a known type
-- [ ] Change name of library to something more descriptive
-- [x] Test out memmap stuff
-- [x] ~~Make it a .zip type~~
-- [ ] Add mutability
-- [x] Archive packing
+## Examples
+See the [demo_notebook.ipynb](https://github.com/RichieHakim/richfile/blob/main/demo_notebook.ipynb) for more detailed examples.

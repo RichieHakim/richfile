@@ -1,4 +1,0 @@
-## Required
-# numpy
-filelock>3.15
-hypothesis
