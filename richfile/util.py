@@ -314,14 +314,19 @@ def load_json(
         return json.load(f, **kwargs)
     
 def load_float(path: Union[str, Path], **kwargs) -> float:
+    """Load a float from a JSON file."""
     return float(load_json(path, **kwargs))
 def load_int(path: Union[str, Path], **kwargs) -> int:
+    """Load an int from a JSON file."""
     return int(load_json(path, **kwargs))
 def load_str(path: Union[str, Path], **kwargs) -> str:
+    """Load a str from a JSON file."""
     return str(load_json(path, **kwargs))
 def load_bool(path: Union[str, Path], **kwargs) -> bool:
+    """Load a bool from a JSON file."""
     return bool(load_json(path, **kwargs))
 def load_None(path: Union[str, Path], **kwargs) -> None:
+    """Load a None value from a JSON file. Raises if the loaded value is not None."""
     out = load_json(path, **kwargs)
     if out is not None:
         raise ValueError("Loaded object is not None.")

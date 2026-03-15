@@ -541,6 +541,17 @@ def register_type_from_dict(prop: Dict) -> None:
     _verify_validity_of_type_lookup(_TYPE_LOOKUP)
 
 def remove_type(type_name: str) -> None:
+    """
+    Remove a previously registered type from the global type lookup.
+
+    Args:
+        type_name (str):
+            The ``type_name`` of the type to remove.
+
+    Raises:
+        KeyError:
+            If the type is not found in the global type lookup.
+    """
     ## Make sure the type_name is valid
     if type_name not in [prop["type_name"] for prop in _TYPE_LOOKUP]:
         raise KeyError(f"Type {type_name} not found.")

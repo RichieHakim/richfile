@@ -54,20 +54,26 @@ def _ensure_directory_style_root(path_directory: Path) -> None:
 
 def _copy_directory_tree(path_source: Path, path_target: Path) -> None:
     """
-    Copy one directory tree to another path.
+    Copy one directory tree to another path. Rejects cases where the target
+    is inside or equal to the source to prevent runaway recursive copies.
+
+    Args:
+        path_source (Path):
+            Source directory to copy from.
+        path_target (Path):
+            Destination directory to copy into (must not overlap source).
+
+    Raises:
+        ValueError:
+            If ``path_target`` is inside or equal to ``path_source``.
     """
     src = path_source.resolve()
     tgt = path_target.resolve()
-    try:
-        tgt.relative_to(src)
+    if tgt == src or src in tgt.parents:
         raise ValueError(
             f"Target path must not be inside source path. "
             f"Source: {src}, Target: {tgt}"
         )
-    except ValueError as e:
-        if "Target path must not be inside" in str(e):
-            raise
-        pass  # relative_to raised ValueError — paths are unrelated, which is what we want
     path_target.mkdir(parents=True, exist_ok=True)
     for path_item in sorted(path_source.rglob("*")):
         path_relative = path_item.relative_to(path_source)
