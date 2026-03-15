@@ -213,3 +213,15 @@ pip install -e .
 
 ## Examples
 See the [demo_notebook.ipynb](https://github.com/RichieHakim/richfile/blob/main/demo_notebook.ipynb) for more detailed examples.
+
+## TODO
+- [x] Tests
+- [x] Examples
+- [x] PyPI
+- [x] Custom saving/loading functions
+- [x] Handling for data without a known type
+- [x] Archive backends (zip, tar, sqlar)
+- [x] Documentation (README + docstrings)
+- [x] License file
+- [ ] Mutability (modify elements in-place)
+- [ ] Compression support for archive backends
