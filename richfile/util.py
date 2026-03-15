@@ -291,7 +291,7 @@ def _prepare_element_loading(
     Performs checks and preparations for loading a file.
     """
     if check:
-        if type_lookup[metadata["type"]]["library"] == []:
+        if type_lookup[metadata["type"]]["versions_supported"] == []:
             warnings.warn(f"Field 'versions_supported' is empty in type_lookup for type {metadata['type']}.")
         ## If the library is python, check the variable directory
         elif metadata["library"] == "python":

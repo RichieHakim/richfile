@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Union, List, Dict, Any, Callable, Optional, Tuple
 from pathlib import Path
 import inspect
@@ -340,11 +342,10 @@ def _verify_validity_of_type_lookup(type_lookup: List[Dict]) -> None:
     """
     ## Check that each property dict has the correct keys. Use sets
     for prop in type_lookup:
-        for prop in type_lookup:
-            if set(prop.keys()) != set(_TYPE_KEYS_REQUIRED):
-                keys_missing = set(_TYPE_KEYS_REQUIRED) - set(prop.keys())
-                keys_extra = set(prop.keys()) - set(_TYPE_KEYS_REQUIRED)
-                raise ValueError(f"Property dict doesn't have matching keys to required keys. Missing keys: {keys_missing}. Extra keys: {keys_extra}. Required keys: {_TYPE_KEYS_REQUIRED}")
+        if set(prop.keys()) != set(_TYPE_KEYS_REQUIRED):
+            keys_missing = set(_TYPE_KEYS_REQUIRED) - set(prop.keys())
+            keys_extra = set(prop.keys()) - set(_TYPE_KEYS_REQUIRED)
+            raise ValueError(f"Property dict doesn't have matching keys to required keys. Missing keys: {keys_missing}. Extra keys: {keys_extra}. Required keys: {_TYPE_KEYS_REQUIRED}")
     
     ## Check that the 'type_name' and 'type_class' fields are unique. Use sets
     type_names = [prop["type_name"] for prop in type_lookup]
@@ -483,28 +484,30 @@ def register_type(
     object_class: type,
     suffix: str,
     library: str,
-    versions_supported: List[str] | None = []
+    versions_supported: List[str] | None = None,
 ):
     """
     Registers a new type of object that can be saved and loaded.
 
     Args:
-        type_name (str): 
+        type_name (str):
             The name of the type.
-        function_load (Callable): 
+        function_load (Callable):
             The function that loads the object from a file.
-        function_save (Callable): 
+        function_save (Callable):
             The function that saves the object to a file.
-        object_class (type): 
+        object_class (type):
             The class of the object.
-        suffix (str): 
+        suffix (str):
             The suffix of the file.
-        library (str): 
+        library (str):
             The library that the object is associated with.
-        versions_supported (List[str], optional): 
-            A list of version strings that are supported by the object. 
+        versions_supported (List[str], optional):
+            A list of version strings that are supported by the object.
             If empty, all versions are supported. Defaults to [].
     """
+    if versions_supported is None:
+        versions_supported = []
     prop = {
         "type_name":          type_name,
         "function_load":      function_load,
@@ -621,13 +624,13 @@ class Container:
         object_class: type,
         suffix: str,
         library: str,
-        versions_supported: List[str] | None = [],
+        versions_supported: List[str] | None = None,
     ):
         self.type_name = type_name
         self.object_class = object_class
         self.suffix = suffix
         self.library = library
-        self.versions_supported = versions_supported
+        self.versions_supported = versions_supported if versions_supported is not None else []
 
     def register_type(self):
         register_type(

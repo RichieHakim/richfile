@@ -26,7 +26,11 @@ class SQLARBackend(ArchiveBackendBase):
         return "sqlar"
 
     def _open_reader(self, path_archive: Union[str, Path]):
-        return closing(self._connect(path_archive=path_archive))
+        path_archive = Path(path_archive)
+        if not path_archive.exists():
+            raise FileNotFoundError(f"SQLAR archive not found: {path_archive}")
+        conn = sqlite3.connect(f"file:{path_archive}?mode=ro", uri=True)
+        return closing(conn)
 
     @contextmanager
     def _open_writer(self, path_archive: Union[str, Path]):

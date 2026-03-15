@@ -56,6 +56,13 @@ def _copy_directory_tree(path_source: Path, path_target: Path) -> None:
     """
     Copy one directory tree to another path.
     """
+    src = path_source.resolve()
+    tgt = path_target.resolve()
+    if tgt == src or str(tgt).startswith(str(src) + "/"):
+        raise ValueError(
+            f"Target path must not be inside source path. "
+            f"Source: {src}, Target: {tgt}"
+        )
     path_target.mkdir(parents=True, exist_ok=True)
     for path_item in sorted(path_source.rglob("*")):
         path_relative = path_item.relative_to(path_source)
