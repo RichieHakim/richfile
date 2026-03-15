@@ -78,7 +78,8 @@ def test_sqlar_metadata_and_typelookup_rows():
         metadata_tree = r.get_metadata_tree()
         assert metadata_tree["metadata"]["type"] == "dict"
 
-        with sqlite3.connect(path_archive) as conn:
+        conn = sqlite3.connect(path_archive)
+        try:
             has_typelookup = conn.execute(
                 "SELECT 1 FROM sqlar WHERE name = ? LIMIT 1",
                 (rf.FILENAME_TYPELOOKUP,),
@@ -89,6 +90,8 @@ def test_sqlar_metadata_and_typelookup_rows():
                 "SELECT COUNT(*) FROM sqlar WHERE data IS NOT NULL AND sz != length(data)"
             ).fetchone()[0]
             assert n_compressed_rows == 0
+        finally:
+            conn.close()
 
 
 def test_sqlar_overwrite_behavior():
@@ -166,12 +169,15 @@ def test_sqlar_keys_raises_on_corrupted_metadata_when_check_true():
         rf.RichFile(path_archive, backend="sqlar").save(DATA_BASIC)
 
         payload_bad = b"not-json"
-        with sqlite3.connect(path_archive) as conn:
+        conn = sqlite3.connect(path_archive)
+        try:
             conn.execute(
                 "UPDATE sqlar SET data = ?, sz = ? WHERE name = ?",
                 (payload_bad, len(payload_bad), rf.FILENAME_METADATA),
             )
             conn.commit()
+        finally:
+            conn.close()
 
         with pytest.raises(json.JSONDecodeError):
             rf.RichFile(path_archive, backend="sqlar", check=True).keys()
@@ -204,7 +210,8 @@ def test_sqlar_rejects_parent_traversal_member_on_custom_materialization():
                 "version": rf.util._get_python_version(),
                 "version_richfile": rf.__version__,
             }
-            with sqlite3.connect(path_archive) as conn:
+            conn = sqlite3.connect(path_archive)
+            try:
                 conn.execute(
                     """
                     CREATE TABLE IF NOT EXISTS sqlar(
@@ -227,6 +234,8 @@ def test_sqlar_rejects_parent_traversal_member_on_custom_materialization():
                     ("../evil.txt", 0o100644, len(payload_evil), payload_evil),
                 )
                 conn.commit()
+            finally:
+                conn.close()
 
             with pytest.raises(ValueError, match="Invalid archive path segment"):
                 rf.RichFile(path_archive, backend="sqlar").load()
