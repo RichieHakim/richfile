@@ -54,6 +54,25 @@ class ArchiveBackendBase:
         name_dict_items: bool,
         save_type_lookup: bool,
     ) -> None:
+        """
+        Serialize a Python object into an archive file.
+
+        Args:
+            richfile (util.RichFile):
+                The RichFile instance driving the save operation.
+            obj (Any):
+                The Python object to serialize.
+            path (Union[str, Path]):
+                Filesystem path for the output archive.
+            check (bool):
+                Whether to run validation checks during serialization.
+            overwrite (bool):
+                Unused; overwrite behavior is handled by RichFile.SafeSaver.
+            name_dict_items (bool):
+                Whether to name dict entries by their string keys.
+            save_type_lookup (bool):
+                Whether to embed the type lookup table in the archive.
+        """
         del overwrite  # overwrite/atomic behavior is handled by RichFile.SafeSaver.
 
         path_archive = str(path)
@@ -104,6 +123,24 @@ class ArchiveBackendBase:
         type_lookup: Dict,
         check: bool,
     ) -> Any:
+        """
+        Deserialize a Python object from an archive file.
+
+        Args:
+            richfile (util.RichFile):
+                The RichFile instance driving the load operation.
+            path (Union[str, Path]):
+                Filesystem path of the archive to read.
+            type_lookup (Dict):
+                Mapping of type names to their load/save properties.
+            check (bool):
+                Whether to run validation checks during deserialization.
+
+        Returns:
+            (Any):
+                obj (Any):
+                    The reconstructed Python object.
+        """
         path_archive, path_in_archive = self._resolve_archive_and_internal_path(
             richfile=richfile,
             path=path,
@@ -166,6 +203,21 @@ class ArchiveBackendBase:
         richfile: "util.RichFile",
         path_dir: Optional[Union[str, Path]],
     ) -> Dict:
+        """
+        Retrieve the metadata dictionary for a node in the archive.
+
+        Args:
+            richfile (util.RichFile):
+                The RichFile instance providing archive context.
+            path_dir (Optional[Union[str, Path]]):
+                Path to the archive or internal subpath. Uses the
+                RichFile's current path if None.
+
+        Returns:
+            (Dict):
+                metadata (Dict):
+                    The metadata dictionary for the specified node.
+        """
         path_archive, path_in_archive = self._resolve_archive_and_internal_path(
             richfile=richfile,
             path=path_dir,
@@ -189,6 +241,21 @@ class ArchiveBackendBase:
         richfile: "util.RichFile",
         path_dir: Optional[Union[str, Path]],
     ) -> List[str]:
+        """
+        List the element names of a container node in the archive.
+
+        Args:
+            richfile (util.RichFile):
+                The RichFile instance providing archive context.
+            path_dir (Optional[Union[str, Path]]):
+                Path to the archive or internal subpath. Uses the
+                RichFile's current path if None.
+
+        Returns:
+            (List[str]):
+                names (List[str]):
+                    Ordered list of child element names.
+        """
         metadata = self.get_metadata(richfile=richfile, path_dir=path_dir)
         return list(metadata["elements"].keys())
 
@@ -197,6 +264,16 @@ class ArchiveBackendBase:
         richfile: "util.RichFile",
         path: Optional[Union[str, Path]] = None,
     ) -> None:
+        """
+        Print a directory-style tree of the archive contents to stdout.
+
+        Args:
+            richfile (util.RichFile):
+                The RichFile instance providing archive context.
+            path (Optional[Union[str, Path]]):
+                Path to the archive or internal subpath. Uses the
+                RichFile's current path if None.
+        """
         path_archive, path_in_archive = self._resolve_archive_and_internal_path(
             richfile=richfile,
             path=path,
@@ -233,6 +310,19 @@ class ArchiveBackendBase:
         path: Optional[Union[str, Path]] = None,
         show_filenames: bool = False,
     ) -> None:
+        """
+        Print a logical tree of the archive contents to stdout, resolving
+        dict keys to their values.
+
+        Args:
+            richfile (util.RichFile):
+                The RichFile instance providing archive context.
+            path (Optional[Union[str, Path]]):
+                Path to the archive or internal subpath. Uses the
+                RichFile's current path if None.
+            show_filenames (bool):
+                Whether to include raw archive member names in the output.
+        """
         path_archive, path_in_archive = self._resolve_archive_and_internal_path(
             richfile=richfile,
             path=path,
@@ -266,6 +356,22 @@ class ArchiveBackendBase:
         richfile: "util.RichFile",
         path: Optional[Union[str, Path]] = None,
     ) -> Dict:
+        """
+        Build the full nested metadata tree for the archive.
+
+        Args:
+            richfile (util.RichFile):
+                The RichFile instance providing archive context.
+            path (Optional[Union[str, Path]]):
+                Path to the archive or internal subpath. Uses the
+                RichFile's current path if None.
+
+        Returns:
+            (Dict):
+                tree (Dict):
+                    Nested dictionary with ``"metadata"`` and ``"elements"``
+                    keys at each level.
+        """
         path_archive, path_in_archive = self._resolve_archive_and_internal_path(
             richfile=richfile,
             path=path,
@@ -285,6 +391,20 @@ class ArchiveBackendBase:
             )
 
     def getitem(self, richfile: "util.RichFile", key: Any) -> "util.RichFile":
+        """
+        Return a new RichFile pointing to a child element by key or index.
+
+        Args:
+            richfile (util.RichFile):
+                The RichFile instance providing archive context.
+            key (Any):
+                String key (for dicts) or integer index (for lists/tuples).
+
+        Returns:
+            (util.RichFile):
+                child (util.RichFile):
+                    A new RichFile scoped to the matched child element.
+        """
         path_archive, path_in_archive = self._resolve_archive_and_internal_path(
             richfile=richfile,
             path=richfile.path,
@@ -369,6 +489,18 @@ class ArchiveBackendBase:
         raise KeyError(f"Key {key} not found.")
 
     def keys(self, richfile: "util.RichFile") -> List[str]:
+        """
+        Return the element names (without suffixes) at the current archive path.
+
+        Args:
+            richfile (util.RichFile):
+                The RichFile instance providing archive context.
+
+        Returns:
+            (List[str]):
+                keys (List[str]):
+                    Element names with file-extension suffixes stripped.
+        """
         try:
             metadata = self.get_metadata(richfile=richfile, path_dir=richfile.path)
             names_elements_raw = list(metadata["elements"].keys())
@@ -385,30 +517,148 @@ class ArchiveBackendBase:
             return []
 
     def _backend_name(self) -> str:
+        """
+        Return the human-readable name of this backend (e.g. ``"zip"``, ``"tar"``).
+
+        Subclasses must override this method.
+
+        Returns:
+            (str):
+                name (str):
+                    The backend identifier string.
+        """
         raise NotImplementedError
 
     def _open_reader(self, path_archive: Union[str, Path]):
+        """
+        Open the archive for reading and return a context-managed reader object.
+
+        Subclasses must override this method.
+
+        Args:
+            path_archive (Union[str, Path]):
+                Filesystem path of the archive to open.
+
+        Returns:
+            A context manager yielding a backend-specific reader handle.
+        """
         raise NotImplementedError
 
     def _open_writer(self, path_archive: Union[str, Path]):
+        """
+        Open the archive for writing and return a context-managed writer object.
+
+        Subclasses must override this method.
+
+        Args:
+            path_archive (Union[str, Path]):
+                Filesystem path of the archive to create or overwrite.
+
+        Returns:
+            A context manager yielding a backend-specific writer handle.
+        """
         raise NotImplementedError
 
     def _iter_raw_members(self, reader) -> List[str]:
+        """
+        List all raw member names in the archive.
+
+        Subclasses must override this method.
+
+        Args:
+            reader:
+                The backend-specific reader handle.
+
+        Returns:
+            (List[str]):
+                names (List[str]):
+                    Raw (unnormalized) member names from the archive.
+        """
         raise NotImplementedError
 
     def _is_raw_member_dir(self, reader, raw_name: str) -> bool:
+        """
+        Check whether a raw archive member represents a directory.
+
+        Subclasses must override this method.
+
+        Args:
+            reader:
+                The backend-specific reader handle.
+            raw_name (str):
+                The raw member name to check.
+
+        Returns:
+            (bool):
+                is_dir (bool):
+                    True if the member is a directory entry.
+        """
         raise NotImplementedError
 
     def _read_raw_member_bytes(self, reader, raw_name: str) -> bytes:
+        """
+        Read the raw bytes of a file member from the archive.
+
+        Subclasses must override this method.
+
+        Args:
+            reader:
+                The backend-specific reader handle.
+            raw_name (str):
+                The raw member name to read.
+
+        Returns:
+            (bytes):
+                data (bytes):
+                    The file contents as bytes.
+        """
         raise NotImplementedError
 
     def _write_file_member(self, writer, member_name: str, data: bytes) -> None:
+        """
+        Write a file entry into the archive.
+
+        Subclasses must override this method.
+
+        Args:
+            writer:
+                The backend-specific writer handle.
+            member_name (str):
+                Normalized archive path for the file.
+            data (bytes):
+                The file content to write.
+        """
         raise NotImplementedError
 
     def _write_dir_member(self, writer, member_name: str) -> None:
+        """
+        Write a directory entry into the archive.
+
+        Subclasses must override this method.
+
+        Args:
+            writer:
+                The backend-specific writer handle.
+            member_name (str):
+                Normalized archive path for the directory.
+        """
         raise NotImplementedError
 
     def _build_index(self, reader) -> Dict[str, Any]:
+        """
+        Scan the archive and build a lookup index of files, directories,
+        and parent-child relationships.
+
+        Args:
+            reader:
+                The backend-specific reader handle.
+
+        Returns:
+            (Dict[str, Any]):
+                index (Dict[str, Any]):
+                    Dictionary with keys ``"files"``, ``"dirs"``, and
+                    ``"children"`` mapping normalized archive paths.
+        """
         files: Dict[str, str] = {}
         dirs: Set[str] = set()
         for raw_name in self._iter_raw_members(reader=reader):
@@ -464,6 +714,22 @@ class ArchiveBackendBase:
         return children_by_parent
 
     def _read_member_bytes(self, reader, index: Dict[str, Any], member_name: str) -> bytes:
+        """
+        Read the bytes of a normalized archive member, using the index for lookup.
+
+        Args:
+            reader:
+                The backend-specific reader handle.
+            index (Dict[str, Any]):
+                The archive index built by ``_build_index``.
+            member_name (str):
+                Normalized archive path of the file to read.
+
+        Returns:
+            (bytes):
+                data (bytes):
+                    The file contents as bytes.
+        """
         member_name = helpers.validate_archive_path(
             path_in_archive=member_name,
             allow_empty=False,
@@ -478,6 +744,20 @@ class ArchiveBackendBase:
         )
 
     def _path_exists(self, index: Dict[str, Any], path_in_archive: str) -> bool:
+        """
+        Check whether a normalized path exists in the archive index.
+
+        Args:
+            index (Dict[str, Any]):
+                The archive index built by ``_build_index``.
+            path_in_archive (str):
+                Normalized archive path to check.
+
+        Returns:
+            (bool):
+                exists (bool):
+                    True if the path exists as a file, directory, or prefix.
+        """
         path_in_archive = helpers.validate_archive_path(
             path_in_archive=path_in_archive,
             allow_empty=True,
@@ -495,6 +775,21 @@ class ArchiveBackendBase:
         index: Dict[str, Any],
         path_parent: str,
     ) -> Set[str]:
+        """
+        Return the direct child names under a parent path, excluding
+        metadata and type-lookup files.
+
+        Args:
+            index (Dict[str, Any]):
+                The archive index built by ``_build_index``.
+            path_parent (str):
+                Normalized archive path of the parent.
+
+        Returns:
+            (Set[str]):
+                children (Set[str]):
+                    Set of direct child names (basenames only).
+        """
         path_parent = helpers.validate_archive_path(
             path_in_archive=path_parent,
             allow_empty=True,
@@ -513,6 +808,24 @@ class ArchiveBackendBase:
         path_in_archive: str,
         check: bool,
     ) -> Dict:
+        """
+        Load and parse the JSON metadata for a single node in the archive.
+
+        Args:
+            reader:
+                The backend-specific reader handle.
+            index (Dict[str, Any]):
+                The archive index built by ``_build_index``.
+            path_in_archive (str):
+                Normalized archive path of the node.
+            check (bool):
+                Whether to validate required keys and version compatibility.
+
+        Returns:
+            (Dict):
+                metadata (Dict):
+                    Parsed metadata dictionary for the node.
+        """
         member_name = helpers.metadata_row_name(path_in_archive=path_in_archive)
         payload = self._read_member_bytes(
             reader=reader,
@@ -545,6 +858,18 @@ class ArchiveBackendBase:
         type_lookup: Dict,
         check: bool,
     ) -> None:
+        """
+        Validate that an element's type and library version are supported
+        by the current type lookup.
+
+        Args:
+            metadata (Dict):
+                Metadata dictionary for the element.
+            type_lookup (Dict):
+                Mapping of type names to their load/save properties.
+            check (bool):
+                Whether to perform the check. No-op if False.
+        """
         if not check:
             return
         if metadata["type"] not in type_lookup:
@@ -584,6 +909,26 @@ class ArchiveBackendBase:
         entries_files: Dict[str, bytes],
         entries_dirs: Set[str],
     ) -> None:
+        """
+        Dispatch serialization of an object to the appropriate handler
+        based on its type.
+
+        Args:
+            obj (Any):
+                The Python object to serialize.
+            path_in_archive (str):
+                Normalized archive path where this object will be stored.
+            type_lookup (Dict):
+                Mapping of types to their save/load properties.
+            check (bool):
+                Whether to run validation checks.
+            name_dict_items (bool):
+                Whether to name dict entries by their string keys.
+            entries_files (Dict[str, bytes]):
+                Accumulator for file entries to be written.
+            entries_dirs (Set[str]):
+                Accumulator for directory entries to be written.
+        """
         props = type_lookup[type(obj)]
         type_name = props["type_name"]
 
@@ -626,6 +971,20 @@ class ArchiveBackendBase:
         entries_files: Dict[str, bytes],
         entries_dirs: Set[str],
     ) -> None:
+        """
+        Serialize a JSON-native scalar (int, float, str, bool, None) as
+        a JSON-encoded file entry.
+
+        Args:
+            obj (Any):
+                The scalar value to serialize.
+            path_in_archive (str):
+                Normalized archive path for the file entry.
+            entries_files (Dict[str, bytes]):
+                Accumulator for file entries to be written.
+            entries_dirs (Set[str]):
+                Accumulator for directory entries to be written.
+        """
         path_in_archive = helpers.validate_archive_path(
             path_in_archive=path_in_archive,
             allow_empty=False,
@@ -644,6 +1003,28 @@ class ArchiveBackendBase:
         entries_files: Dict[str, bytes],
         entries_dirs: Set[str],
     ) -> None:
+        """
+        Serialize a native container type (list, tuple, set, frozenset, dict,
+        dict_item) by recursively serializing each child element.
+
+        Args:
+            obj (Any):
+                The container object to serialize.
+            path_in_archive (str):
+                Normalized archive path for the container directory.
+            type_name (str):
+                The resolved type name of the container.
+            type_lookup (Dict):
+                Mapping of types to their save/load properties.
+            check (bool):
+                Whether to run validation checks.
+            name_dict_items (bool):
+                Whether to name dict entries by their string keys.
+            entries_files (Dict[str, bytes]):
+                Accumulator for file entries to be written.
+            entries_dirs (Set[str]):
+                Accumulator for directory entries to be written.
+        """
         path_in_archive = helpers.validate_archive_path(
             path_in_archive=path_in_archive,
             allow_empty=True,
@@ -719,6 +1100,26 @@ class ArchiveBackendBase:
         entries_files: Dict[str, bytes],
         entries_dirs: Set[str],
     ) -> None:
+        """
+        Serialize a non-native object by delegating to its registered save
+        function via a temporary directory, then ingesting the result.
+
+        Args:
+            obj (Any):
+                The object to serialize.
+            path_in_archive (str):
+                Normalized archive path for the object.
+            type_lookup (Dict):
+                Mapping of types to their save/load properties.
+            check (bool):
+                Whether to run validation checks.
+            name_dict_items (bool):
+                Whether to name dict entries by their string keys.
+            entries_files (Dict[str, bytes]):
+                Accumulator for file entries to be written.
+            entries_dirs (Set[str]):
+                Accumulator for directory entries to be written.
+        """
         basename = helpers.split_archive_path(path_in_archive=path_in_archive)[1]
         basename = "root" if basename == "" else basename
 
@@ -749,6 +1150,20 @@ class ArchiveBackendBase:
         dir_tmp: Union[str, Path],
         path_expected: Path,
     ) -> Path:
+        """
+        Locate the output created by a custom save function in a temp directory.
+
+        Args:
+            dir_tmp (Union[str, Path]):
+                The temporary directory where save output was written.
+            path_expected (Path):
+                The expected output path within the temp directory.
+
+        Returns:
+            (Path):
+                path_created (Path):
+                    The resolved path to the created output.
+        """
         if path_expected.exists():
             return path_expected
         candidates = list(Path(dir_tmp).iterdir())
@@ -765,6 +1180,20 @@ class ArchiveBackendBase:
         entries_files: Dict[str, bytes],
         entries_dirs: Set[str],
     ) -> None:
+        """
+        Read a filesystem file or directory tree and add its contents to the
+        archive entry accumulators.
+
+        Args:
+            path_source (Path):
+                Filesystem path of the file or directory to ingest.
+            path_in_archive (str):
+                Normalized archive path prefix for the ingested entries.
+            entries_files (Dict[str, bytes]):
+                Accumulator for file entries to be written.
+            entries_dirs (Set[str]):
+                Accumulator for directory entries to be written.
+        """
         path_in_archive = helpers.validate_archive_path(
             path_in_archive=path_in_archive,
             allow_empty=True,
@@ -799,6 +1228,15 @@ class ArchiveBackendBase:
                 self._add_parent_dirs(path_member=member_name, entries_dirs=entries_dirs)
 
     def _add_parent_dirs(self, path_member: str, entries_dirs: Set[str]) -> None:
+        """
+        Register all ancestor directories of a member path in the directory set.
+
+        Args:
+            path_member (str):
+                Normalized archive path of the member.
+            entries_dirs (Set[str]):
+                Accumulator for directory entries to be written.
+        """
         path_parent, _ = helpers.split_archive_path(path_in_archive=path_member)
         while path_parent != "":
             entries_dirs.add(path_parent)
@@ -813,6 +1251,29 @@ class ArchiveBackendBase:
         type_lookup: Dict,
         check: bool,
     ) -> Any:
+        """
+        Dispatch deserialization of an object from the archive based on
+        its type metadata.
+
+        Args:
+            reader:
+                The backend-specific reader handle.
+            index (Dict[str, Any]):
+                The archive index built by ``_build_index``.
+            path_in_archive (str):
+                Normalized archive path of the object.
+            metadata (Dict):
+                Metadata dictionary describing the object's type and version.
+            type_lookup (Dict):
+                Mapping of type names to their load/save properties.
+            check (bool):
+                Whether to run validation checks.
+
+        Returns:
+            (Any):
+                obj (Any):
+                    The reconstructed Python object.
+        """
         path_in_archive = helpers.validate_archive_path(
             path_in_archive=path_in_archive,
             allow_empty=True,
@@ -855,6 +1316,26 @@ class ArchiveBackendBase:
         path_in_archive: str,
         type_name: str,
     ) -> Any:
+        """
+        Load a JSON-native scalar value from the archive and cast it to
+        the expected Python type.
+
+        Args:
+            reader:
+                The backend-specific reader handle.
+            index (Dict[str, Any]):
+                The archive index built by ``_build_index``.
+            path_in_archive (str):
+                Normalized archive path of the scalar file.
+            type_name (str):
+                Expected type name (``"float"``, ``"int"``, ``"str"``,
+                ``"bool"``, or ``"None"``).
+
+        Returns:
+            (Any):
+                value (Any):
+                    The deserialized scalar value.
+        """
         payload = self._read_member_bytes(
             reader=reader,
             index=index,
@@ -882,6 +1363,27 @@ class ArchiveBackendBase:
         type_lookup: Dict,
         check: bool,
     ) -> Any:
+        """
+        Load a native container (list, tuple, set, frozenset, dict,
+        dict_item) by recursively loading each child element.
+
+        Args:
+            reader:
+                The backend-specific reader handle.
+            index (Dict[str, Any]):
+                The archive index built by ``_build_index``.
+            path_in_archive (str):
+                Normalized archive path of the container.
+            type_lookup (Dict):
+                Mapping of type names to their load/save properties.
+            check (bool):
+                Whether to run validation checks.
+
+        Returns:
+            (Any):
+                container (Any):
+                    The reconstructed Python container.
+        """
         metadata = self._load_metadata_row(
             reader=reader,
             index=index,
@@ -977,6 +1479,23 @@ class ArchiveBackendBase:
         path_in_archive: str,
         metadata: Dict,
     ) -> bool:
+        """
+        Check whether the archive contains the expected entry for an element,
+        choosing the lookup strategy based on type.
+
+        Args:
+            index (Dict[str, Any]):
+                The archive index built by ``_build_index``.
+            path_in_archive (str):
+                Normalized archive path of the element.
+            metadata (Dict):
+                Metadata dictionary describing the element's type.
+
+        Returns:
+            (bool):
+                exists (bool):
+                    True if the expected archive entry exists.
+        """
         path_in_archive = helpers.validate_archive_path(
             path_in_archive=path_in_archive,
             allow_empty=False,
@@ -997,6 +1516,29 @@ class ArchiveBackendBase:
         type_lookup: Dict,
         check: bool,
     ) -> Any:
+        """
+        Load a non-native object by materializing its archive subtree to a
+        temporary directory and calling the registered load function.
+
+        Args:
+            reader:
+                The backend-specific reader handle.
+            index (Dict[str, Any]):
+                The archive index built by ``_build_index``.
+            path_in_archive (str):
+                Normalized archive path of the object.
+            metadata (Dict):
+                Metadata dictionary describing the object's type and version.
+            type_lookup (Dict):
+                Mapping of type names to their load/save properties.
+            check (bool):
+                Whether to run validation checks.
+
+        Returns:
+            (Any):
+                obj (Any):
+                    The reconstructed Python object.
+        """
         function_load = type_lookup[metadata["type"]]["function_load"]
         basename = helpers.split_archive_path(path_in_archive=path_in_archive)[1]
         basename = "root" if basename == "" else basename
@@ -1028,6 +1570,20 @@ class ArchiveBackendBase:
         path_in_archive: str,
         path_out: Path,
     ) -> None:
+        """
+        Extract an archive subtree to a filesystem directory, recreating
+        the directory structure and file contents.
+
+        Args:
+            reader:
+                The backend-specific reader handle.
+            index (Dict[str, Any]):
+                The archive index built by ``_build_index``.
+            path_in_archive (str):
+                Normalized archive path of the subtree root.
+            path_out (Path):
+                Filesystem path where the subtree will be materialized.
+        """
         path_in_archive = helpers.validate_archive_path(
             path_in_archive=path_in_archive,
             allow_empty=True,
@@ -1119,6 +1675,25 @@ class ArchiveBackendBase:
         path_in_archive: str,
         check: bool,
     ) -> Dict:
+        """
+        Recursively build the nested metadata tree from a given archive path.
+
+        Args:
+            reader:
+                The backend-specific reader handle.
+            index (Dict[str, Any]):
+                The archive index built by ``_build_index``.
+            path_in_archive (str):
+                Normalized archive path of the subtree root.
+            check (bool):
+                Whether to run validation checks.
+
+        Returns:
+            (Dict):
+                tree (Dict):
+                    Nested dictionary with ``"metadata"`` and ``"elements"``
+                    keys at each container level.
+        """
         metadata = self._load_metadata_row(
             reader=reader,
             index=index,
@@ -1150,6 +1725,23 @@ class ArchiveBackendBase:
         check: bool,
         level: int,
     ) -> None:
+        """
+        Recursively print a directory-style tree of archive elements to stdout.
+
+        Args:
+            reader:
+                The backend-specific reader handle.
+            index (Dict[str, Any]):
+                The archive index built by ``_build_index``.
+            path_in_archive (str):
+                Normalized archive path of the current node.
+            type_lookup (Dict):
+                Mapping of type names to their load/save properties.
+            check (bool):
+                Whether to run validation checks.
+            level (int):
+                Current indentation depth for tree formatting.
+        """
         del type_lookup
         metadata = self._load_metadata_row(
             reader=reader,
@@ -1180,6 +1772,26 @@ class ArchiveBackendBase:
         show_filenames: bool,
         level: int,
     ) -> None:
+        """
+        Recursively print a logical tree of archive elements to stdout,
+        resolving dict keys to their values for display.
+
+        Args:
+            reader:
+                The backend-specific reader handle.
+            index (Dict[str, Any]):
+                The archive index built by ``_build_index``.
+            path_in_archive (str):
+                Normalized archive path of the current node.
+            type_lookup (Dict):
+                Mapping of type names to their load/save properties.
+            check (bool):
+                Whether to run validation checks.
+            show_filenames (bool):
+                Whether to include raw archive member names in the output.
+            level (int):
+                Current indentation depth for tree formatting.
+        """
         metadata = self._load_metadata_row(
             reader=reader,
             index=index,
@@ -1248,6 +1860,26 @@ class ArchiveBackendBase:
         path: Optional[Union[str, Path]],
         default_to_current_subpath: bool,
     ) -> Tuple[str, str]:
+        """
+        Resolve a user-supplied path into a filesystem archive path and a
+        normalized internal archive path.
+
+        Args:
+            richfile (util.RichFile):
+                The RichFile instance providing default path context.
+            path (Optional[Union[str, Path]]):
+                User-supplied path, which may be an archive file path, an
+                internal subpath, or None to use defaults.
+            default_to_current_subpath (bool):
+                Whether to use the RichFile's current subpath as the
+                default internal path.
+
+        Returns:
+            (Tuple[str, str]):
+                result (Tuple[str, str]):
+                    A tuple of (archive filesystem path, normalized
+                    internal archive path).
+        """
         if richfile.path is None and path is None:
             raise ValueError("`path` [str, Path] must be specified.")
 
@@ -1301,6 +1933,24 @@ class ArchiveBackendBase:
         path_archive: Union[str, Path],
         reader,
     ) -> Dict[str, Any]:
+        """
+        Return a cached archive index if available and fresh, otherwise
+        build and cache a new one.
+
+        Args:
+            richfile (util.RichFile):
+                The RichFile instance that holds the index cache.
+            path_archive (Union[str, Path]):
+                Filesystem path of the archive.
+            reader:
+                The backend-specific reader handle.
+
+        Returns:
+            (Dict[str, Any]):
+                index (Dict[str, Any]):
+                    The archive index with ``"files"``, ``"dirs"``, and
+                    ``"children"`` mappings.
+        """
         path_archive = str(path_archive)
         path_obj = Path(path_archive)
         stat = path_obj.stat()

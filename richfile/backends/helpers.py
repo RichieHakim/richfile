@@ -15,6 +15,17 @@ _WINDOWS_DRIVE_PREFIX = re.compile(r"^[A-Za-z]:")
 def normalize_archive_path(path_in_archive: Optional[str]) -> str:
     """
     Normalize an internal archive path to a forward-slash relative form.
+    Strips leading/trailing slashes, converts backslashes, and collapses
+    empty/dot-only paths to ``""``.
+
+    Args:
+        path_in_archive (Optional[str]):
+            Raw archive member path. ``None`` is treated as empty.
+
+    Returns:
+        (str):
+            path_normalized (str):
+                Cleaned forward-slash relative path, or ``""`` for root.
     """
     if path_in_archive is None:
         return ""
@@ -24,7 +35,24 @@ def normalize_archive_path(path_in_archive: Optional[str]) -> str:
 
 def validate_archive_path(path_in_archive: Optional[str], allow_empty: bool = True) -> str:
     """
-    Validate archive member paths to prevent absolute/parent traversal paths.
+    Validate and normalize an archive member path, rejecting absolute paths,
+    drive prefixes, and parent-traversal segments (``..``).
+
+    Args:
+        path_in_archive (Optional[str]):
+            Raw archive member path.
+        allow_empty (bool):
+            If ``True``, ``None`` and ``""`` are accepted and return ``""``.
+
+    Returns:
+        (str):
+            path_validated (str):
+                Normalized, validated path safe for archive operations.
+
+    Raises:
+        ValueError:
+            If the path is absolute, contains ``..``, or is empty when
+            ``allow_empty=False``.
     """
     if path_in_archive is None:
         if allow_empty:
@@ -57,7 +85,24 @@ def validate_archive_path(path_in_archive: Optional[str], allow_empty: bool = Tr
 
 def safe_resolve_materialized_path(path_root: Path, path_relative: str) -> Path:
     """
-    Resolve a materialized output path and enforce that it stays inside ``path_root``.
+    Resolve a materialized output path and enforce that it stays inside
+    ``path_root``. Prevents archive extraction from writing outside the
+    intended directory via path traversal.
+
+    Args:
+        path_root (Path):
+            Root directory that all materialized paths must stay within.
+        path_relative (str):
+            Relative archive path to resolve.
+
+    Returns:
+        (Path):
+            path_resolved (Path):
+                Fully resolved path guaranteed to be under ``path_root``.
+
+    Raises:
+        ValueError:
+            If the resolved path escapes ``path_root``.
     """
     path_relative = validate_archive_path(path_in_archive=path_relative, allow_empty=False)
     path_root_resolved = path_root.resolve()
@@ -75,7 +120,18 @@ def safe_resolve_materialized_path(path_root: Path, path_relative: str) -> Path:
 
 def join_archive_path(path_parent: str, path_child: str) -> str:
     """
-    Join two archive-internal paths.
+    Join two archive-internal paths with forward-slash separator.
+
+    Args:
+        path_parent (str):
+            Parent path segment.
+        path_child (str):
+            Child path segment.
+
+    Returns:
+        (str):
+            path_joined (str):
+                Combined path. If either is empty, returns the other.
     """
     path_parent = normalize_archive_path(path_in_archive=path_parent)
     path_child = normalize_archive_path(path_in_archive=path_child)
@@ -89,6 +145,17 @@ def join_archive_path(path_parent: str, path_child: str) -> str:
 def split_archive_path(path_in_archive: str) -> Tuple[str, str]:
     """
     Split an archive-internal path into ``(parent, name)``.
+
+    Args:
+        path_in_archive (str):
+            Archive-internal path to split.
+
+    Returns:
+        (Tuple[str, str]):
+            path_parent (str):
+                Parent directory path, or ``""`` if at root.
+            name (str):
+                Final segment name, or ``""`` if input is empty.
     """
     path_in_archive = normalize_archive_path(path_in_archive=path_in_archive)
     if path_in_archive == "":
@@ -101,7 +168,18 @@ def split_archive_path(path_in_archive: str) -> Tuple[str, str]:
 
 def metadata_row_name(path_in_archive: str) -> str:
     """
-    Return the archive member name for metadata at a given internal path.
+    Return the archive member name for the metadata file at a given internal
+    path. For root, returns ``FILENAME_METADATA``; for nested paths, returns
+    ``"path/to/.metadata.richfile"``.
+
+    Args:
+        path_in_archive (str):
+            Archive-internal path (``""`` for root).
+
+    Returns:
+        (str):
+            name_metadata (str):
+                Full archive member name for the metadata file.
     """
     path_in_archive = normalize_archive_path(path_in_archive=path_in_archive)
     return FILENAME_METADATA if path_in_archive == "" else f"{path_in_archive}/{FILENAME_METADATA}"
@@ -109,7 +187,20 @@ def metadata_row_name(path_in_archive: str) -> str:
 
 def get_direct_child_name(path_parent: str, row_name: str) -> Optional[str]:
     """
-    Return the direct child name under ``path_parent`` represented by ``row_name``.
+    Return the direct child name under ``path_parent`` represented by
+    ``row_name``, or ``None`` if ``row_name`` is not a descendant.
+
+    Args:
+        path_parent (str):
+            Parent archive path (``""`` for root).
+        row_name (str):
+            Full archive member name to inspect.
+
+    Returns:
+        (Optional[str]):
+            name_child (Optional[str]):
+                First path segment under ``path_parent``, or ``None`` if
+                ``row_name`` is not a descendant.
     """
     path_parent = normalize_archive_path(path_in_archive=path_parent)
     row_name = normalize_archive_path(path_in_archive=row_name)
@@ -129,7 +220,19 @@ def get_direct_child_name(path_parent: str, row_name: str) -> Optional[str]:
 
 def serialize_type_lookup(type_lookup_properties: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    Convert callable/class values in a type lookup table to serializable strings.
+    Convert callable/class values in a type lookup table to JSON-serializable
+    strings. Functions are converted via ``inspect.getsource``; classes via
+    ``str()``. The original list is not modified.
+
+    Args:
+        type_lookup_properties (List[Dict[str, Any]]):
+            List of type property dicts from ``TypeLookup.properties``.
+
+    Returns:
+        (List[Dict[str, Any]]):
+            properties_serialized (List[Dict[str, Any]]):
+                Deep copy with ``function_load``, ``function_save``, and
+                ``object_class`` replaced by string representations.
     """
     out = copy.deepcopy(type_lookup_properties)
     for prop in out:

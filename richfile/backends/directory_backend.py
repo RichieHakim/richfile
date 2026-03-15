@@ -26,6 +26,25 @@ class DirectoryBackend:
         name_dict_items: bool,
         save_type_lookup: bool,
     ) -> None:
+        """
+        Save a Python object to a directory-based richfile on disk.
+
+        Args:
+            richfile (util.RichFile):
+                The RichFile instance managing type lookup and settings.
+            obj (Any):
+                The Python object to serialize and save.
+            path (Union[str, Path]):
+                Destination path for the saved richfile.
+            check (bool):
+                Whether to perform validation checks during saving.
+            overwrite (bool):
+                Whether to overwrite an existing file at the path.
+            name_dict_items (bool):
+                Whether to use dictionary keys as filenames for dict items.
+            save_type_lookup (bool):
+                Whether to save the type lookup table alongside the data.
+        """
         util.save_object(
             obj=obj,
             path=path,
@@ -52,6 +71,24 @@ class DirectoryBackend:
         type_lookup: Dict,
         check: bool,
     ) -> Any:
+        """
+        Load a Python object from a directory-based richfile on disk.
+
+        Args:
+            richfile (util.RichFile):
+                The RichFile instance managing type lookup and settings.
+            path (Union[str, Path]):
+                Path to the richfile directory or file to load.
+            type_lookup (Dict):
+                Mapping of types to their serialization properties.
+            check (bool):
+                Whether to perform validation checks during loading.
+
+        Returns:
+            (Any):
+                obj (Any):
+                    The deserialized Python object.
+        """
         if not (Path(path).parent / FILENAME_METADATA).exists():
             if Path(path).is_dir():
                 if not (Path(path) / FILENAME_METADATA).exists():
@@ -104,6 +141,20 @@ class DirectoryBackend:
         richfile: "util.RichFile",
         path_dir: Union[str, Path],
     ) -> Dict:
+        """
+        Retrieve the metadata dictionary for a richfile directory.
+
+        Args:
+            richfile (util.RichFile):
+                The RichFile instance managing settings.
+            path_dir (Union[str, Path]):
+                Path to the directory containing the metadata file.
+
+        Returns:
+            (Dict):
+                metadata (Dict):
+                    The parsed metadata dictionary for the directory.
+        """
         return util.load_folder_metadata(path_dir=path_dir, check=richfile.check)
 
     def list_elements(
@@ -111,6 +162,20 @@ class DirectoryBackend:
         richfile: "util.RichFile",
         path_dir: Union[str, Path],
     ) -> List[str]:
+        """
+        List the names of all elements stored in a richfile directory.
+
+        Args:
+            richfile (util.RichFile):
+                The RichFile instance managing settings.
+            path_dir (Union[str, Path]):
+                Path to the directory to list elements from.
+
+        Returns:
+            (List[str]):
+                names (List[str]):
+                    The names of all elements in the directory.
+        """
         metadata = self.get_metadata(richfile=richfile, path_dir=path_dir)
         return list(metadata["elements"].keys())
 
@@ -119,11 +184,21 @@ class DirectoryBackend:
         richfile: "util.RichFile",
         path: Optional[Union[str, Path]] = None,
     ) -> None:
+        """
+        Print a tree view of the richfile directory structure with type annotations.
+
+        Args:
+            richfile (util.RichFile):
+                The RichFile instance managing settings.
+            path (Optional[Union[str, Path]]):
+                Path to display. Defaults to the richfile's own path.
+        """
         path = richfile.path if path is None else path
         if path is None:
             raise ValueError("`path` [str, Path] must be specified.")
 
         def _view_tree(path_inner, level=0):
+            """Recursively print directory tree nodes with indentation."""
             metadata = self.get_metadata(richfile=richfile, path_dir=path_inner)
             for name, value in metadata["elements"].items():
                 print("|   " * level + "├── " + f"{name} ({value['type']})")
@@ -159,12 +234,24 @@ class DirectoryBackend:
         path: Optional[Union[str, Path]] = None,
         show_filenames: bool = False,
     ) -> None:
+        """
+        Print a logical tree view of the richfile, resolving dict keys for display.
+
+        Args:
+            richfile (util.RichFile):
+                The RichFile instance managing settings.
+            path (Optional[Union[str, Path]]):
+                Path to display. Defaults to the richfile's own path.
+            show_filenames (bool):
+                Whether to include raw filenames alongside type labels.
+        """
         sf = show_filenames
         path = richfile.path if path is None else path
         if path is None:
             raise ValueError("`path` [str, Path] must be specified.")
 
         def _view_tree(path_inner, level=0):
+            """Recursively print logical tree nodes, resolving dict keys."""
             metadata = self.get_metadata(richfile=richfile, path_dir=path_inner)
             for name, value in metadata["elements"].items():
                 if value["type"] == "dict_item":
@@ -237,11 +324,26 @@ class DirectoryBackend:
         richfile: "util.RichFile",
         path: Optional[Union[str, Path]] = None,
     ) -> Dict:
+        """
+        Build a nested metadata tree for the entire richfile structure.
+
+        Args:
+            richfile (util.RichFile):
+                The RichFile instance managing settings.
+            path (Optional[Union[str, Path]]):
+                Path to inspect. Defaults to the richfile's own path.
+
+        Returns:
+            (Dict):
+                tree (Dict):
+                    Nested dictionary containing metadata and element subtrees.
+        """
         path = richfile.path if path is None else path
         if path is None:
             raise ValueError("`path` [str, Path] must be specified.")
 
         def _get_metadata_tree(path_inner):
+            """Recursively build a metadata tree from a directory path."""
             metadata = self.get_metadata(richfile=richfile, path_dir=path_inner)
             out = {
                 "metadata": metadata,
@@ -276,6 +378,20 @@ class DirectoryBackend:
             raise FileNotFoundError(f"Path {path} not found.")
 
     def getitem(self, richfile: "util.RichFile", key: Any) -> "util.RichFile":
+        """
+        Retrieve a child element from a richfile by string key or integer index.
+
+        Args:
+            richfile (util.RichFile):
+                The RichFile instance to index into.
+            key (Any):
+                A string key (for dicts) or integer index (for lists/tuples).
+
+        Returns:
+            (util.RichFile):
+                child (util.RichFile):
+                    A new RichFile instance pointing to the selected element.
+        """
         if isinstance(key, str):
             metadata = self.get_metadata(richfile=richfile, path_dir=richfile.path)
             if metadata["type"] != "dict":
@@ -327,6 +443,18 @@ class DirectoryBackend:
         raise KeyError(f"Key {key} not found.")
 
     def keys(self, richfile: "util.RichFile") -> List[str]:
+        """
+        Return the element names in the richfile directory, without file extensions.
+
+        Args:
+            richfile (util.RichFile):
+                The RichFile instance to retrieve keys from.
+
+        Returns:
+            (List[str]):
+                keys (List[str]):
+                    Element names with file extensions stripped.
+        """
         try:
             metadata = self.get_metadata(richfile=richfile, path_dir=richfile.path)
             names_elements_raw = list(metadata["elements"].keys())
