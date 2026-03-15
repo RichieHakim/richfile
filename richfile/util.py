@@ -686,7 +686,8 @@ def detect_backend(path: Union[str, Path]) -> str:
     1. ZIP magic
     2. TAR magic
     3. SQLite + ``sqlar`` table
-    4. Directory-style element file (parent has ``.metadata.richfile``)
+    4. Directory-style element (parent has ``.metadata.richfile``, checked last
+       so archive files inside a directory tree are not misclassified)
     """
     path = Path(path)
 
@@ -698,8 +699,6 @@ def detect_backend(path: Union[str, Path]) -> str:
         )
 
     if path.exists() and path.is_file():
-        if (path.parent / FILENAME_METADATA).exists():
-            return "directory"
         if zipfile.is_zipfile(path):
             return "zip"
         try:
@@ -709,6 +708,8 @@ def detect_backend(path: Union[str, Path]) -> str:
             pass
         if _is_sqlar_database(path=path):
             return "sqlar"
+        if (path.parent / FILENAME_METADATA).exists():
+            return "directory"
         raise ValueError(
             "Could not detect backend from file path. "
             f"Path is not recognized as ZIP/TAR/SQLAR/directory-element: {path}"

@@ -92,8 +92,13 @@ def extract_backend_to_directory(
                 Directory containing directory-style richfile files.
     """
     _validate_backend_name(backend=backend_source)
-    path_source = Path(path_source)
-    path_directory_out = Path(path_directory_out)
+    path_source = Path(path_source).resolve()
+    path_directory_out = Path(path_directory_out).resolve()
+
+    if path_source == path_directory_out:
+        raise ValueError(
+            f"Source and target paths must differ. Both resolve to: {path_source}"
+        )
 
     _prepare_target_path(path_target=path_directory_out, overwrite=overwrite)
     path_directory_out.parent.mkdir(parents=True, exist_ok=True)
@@ -161,9 +166,14 @@ def pack_directory_to_backend(
                 Created backend root path.
     """
     _validate_backend_name(backend=backend_target)
-    path_directory_in = Path(path_directory_in)
-    path_target = Path(path_target)
+    path_directory_in = Path(path_directory_in).resolve()
+    path_target = Path(path_target).resolve()
     _ensure_directory_style_root(path_directory=path_directory_in)
+
+    if path_directory_in == path_target:
+        raise ValueError(
+            f"Source and target paths must differ. Both resolve to: {path_directory_in}"
+        )
 
     _prepare_target_path(path_target=path_target, overwrite=overwrite)
     path_target.parent.mkdir(parents=True, exist_ok=True)
