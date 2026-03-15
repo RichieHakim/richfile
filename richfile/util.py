@@ -669,11 +669,14 @@ def _is_sqlar_database(path: Union[str, Path]) -> bool:
         return False
 
     try:
-        with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as conn:
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        try:
             row = conn.execute(
                 "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sqlar' LIMIT 1"
             ).fetchone()
             return row is not None
+        finally:
+            conn.close()
     except sqlite3.Error:
         return False
 
