@@ -1,4 +1,4 @@
-__version__ = "0.5.5"
+__version__ = "0.6.0"
 
 VERSIONS_RICHFILE_SUPPORTED = [">=0.3.1", "<1.0.0"]
 PYTHON_VERSIONS_SUPPORTED = [">=3", "<4"]
@@ -22,4 +22,7 @@ NAMES_EXTRA_FILES_ALLOWED = {
 ## Import important stuff from util.py into top-level namespace
 from . import functions, util
 from .util import RichFile, load_folder, load_element, load_folder_metadata, save_object, invalid_chars_filename
+from . import backends
+from . import conversion
+from .conversion import convert_backend, extract_backend_to_directory, pack_directory_to_backend
 from . import demo

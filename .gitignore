@@ -165,7 +165,7 @@ wandb/
 ## VS Code
 .vscode/
 
-## other
+## Agent
+.agent/
 agent_assets/
 AGENTS.md
-.agent/

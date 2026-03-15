@@ -86,9 +86,12 @@ import inspect
 import shutil
 import filelock
 import os
+import sqlite3
+import tarfile
 from contextlib import ExitStack
 import unicodedata
 import sys
+import zipfile
 
 from . import functions
 from . import __version__ as VERSION_RICHFILE
@@ -288,7 +291,7 @@ def _prepare_element_loading(
     Performs checks and preparations for loading a file.
     """
     if check:
-        if type_lookup[metadata["type"]]["library"] == []:
+        if type_lookup[metadata["type"]]["versions_supported"] == []:
             warnings.warn(f"Field 'versions_supported' is empty in type_lookup for type {metadata['type']}.")
         ## If the library is python, check the variable directory
         elif metadata["library"] == "python":
@@ -649,6 +652,74 @@ def invalid_chars_filename(name: str) -> str:
     return {c: single(c) for c in name if not single(c)}
 
 
+def _is_sqlar_database(path: Union[str, Path]) -> bool:
+    """
+    Check whether a file path is a SQLite database with an SQLAR table.
+    """
+    path = Path(path)
+    if (not path.exists()) or (not path.is_file()):
+        return False
+
+    try:
+        with open(path, "rb") as file_reader:
+            header = file_reader.read(16)
+    except OSError:
+        return False
+    if header != b"SQLite format 3\x00":
+        return False
+
+    try:
+        with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as conn:
+            row = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sqlar' LIMIT 1"
+            ).fetchone()
+            return row is not None
+    except sqlite3.Error:
+        return False
+
+
+def detect_backend(path: Union[str, Path]) -> str:
+    """
+    Detect backend type from an existing path.
+
+    Resolution order for files:
+    1. ZIP magic
+    2. TAR magic
+    3. SQLite + ``sqlar`` table
+    4. Directory-style element (parent has ``.metadata.richfile``, checked last
+       so archive files inside a directory tree are not misclassified)
+    """
+    path = Path(path)
+
+    if path.exists() and path.is_dir():
+        if (path / FILENAME_METADATA).exists():
+            return "directory"
+        raise ValueError(
+            f"Could not detect backend from directory path without metadata file: {path}"
+        )
+
+    if path.exists() and path.is_file():
+        if zipfile.is_zipfile(path):
+            return "zip"
+        try:
+            if tarfile.is_tarfile(path):
+                return "tar"
+        except tarfile.TarError:
+            pass
+        if _is_sqlar_database(path=path):
+            return "sqlar"
+        if (path.parent / FILENAME_METADATA).exists():
+            return "directory"
+        raise ValueError(
+            "Could not detect backend from file path. "
+            f"Path is not recognized as ZIP/TAR/SQLAR/directory-element: {path}"
+        )
+
+    if (path.parent / FILENAME_METADATA).exists():
+        return "directory"
+    raise FileNotFoundError(f"Path not found for backend detection: {path}")
+
+
 ####################################################################################################
 #################################### HIGH-LEVEL CLASS ##############################################
 ####################################################################################################
@@ -680,6 +751,14 @@ class RichFile:
             {FILENAME_TYPELOOKUP} in the outermost richfile directory if it
             is a directory. If None, uses the save_type_lookup specified in
             the RichFile object.
+        backend (Optional[str]):
+            Storage backend to use.
+            Supported values:
+                * ``"auto"``: Detect backend from existing path for load/query.
+                * ``"directory"``: Original directory-based richfile layout.
+                * ``"sqlar"``: Single-file SQLite archive backend.
+                * ``"zip"``: Single-file ZIP archive backend (stored/no compression).
+                * ``"tar"``: Single-file plain TAR archive backend.
     """
     def __init__(
         self,
@@ -689,6 +768,7 @@ class RichFile:
         overwrite: Optional[bool] = False,
         name_dict_items: Optional[bool] = True,
         save_type_lookup: Optional[bool] = True,
+        backend: Optional[str] = "auto",
     ):
         self.path             = path
         self.check            = check
@@ -696,10 +776,82 @@ class RichFile:
         self.overwrite        = overwrite
         self.name_dict_items  = name_dict_items
         self.save_type_lookup = save_type_lookup
+        self.backend          = "auto" if backend is None else backend
+        self._path_in_archive = ""
+        self._archive_index_cache = {}
+        self._backend_auto_cached = None
+
+        if self.backend not in {"auto", "directory", "sqlar", "zip", "tar"}:
+            raise ValueError(
+                f"Unsupported backend: {self.backend}. Supported backends: ['auto', 'directory', 'sqlar', 'zip', 'tar']."
+            )
 
         self.type_lookup = copy.deepcopy(functions.TypeLookup())
         self.params_load = {}
         self.params_save = {}
+
+    def _resolve_backend_name(
+        self,
+        path: Optional[Union[str, Path]] = None,
+        for_save: bool = False,
+    ) -> str:
+        if self.backend != "auto":
+            return self.backend
+
+        path_hint = self.path if path is None else path
+        if (path_hint is not None) and Path(path_hint).exists():
+            backend_detected = detect_backend(path=path_hint)
+            if (self.path is not None) and (Path(self.path) == Path(path_hint)):
+                self._backend_auto_cached = backend_detected
+            return backend_detected
+
+        if (self.path is not None) and Path(self.path).exists():
+            backend_detected = detect_backend(path=self.path)
+            self._backend_auto_cached = backend_detected
+            return backend_detected
+
+        if self._backend_auto_cached is not None:
+            return self._backend_auto_cached
+
+        if for_save:
+            self._backend_auto_cached = "directory"
+            return "directory"
+
+        path_used = self.path if path is None else path
+        raise FileNotFoundError(
+            "Could not auto-detect backend because the target path does not exist. "
+            f"Specify backend explicitly or create path first. path={path_used}"
+        )
+
+    def _get_backend_impl(
+        self,
+        path: Optional[Union[str, Path]] = None,
+        for_save: bool = False,
+    ):
+        backend_name = self._resolve_backend_name(
+            path=path,
+            for_save=for_save,
+        )
+        if backend_name == "directory":
+            from .backends.directory_backend import DirectoryBackend
+
+            return DirectoryBackend()
+        elif backend_name == "sqlar":
+            from .backends.sqlar_backend import SQLARBackend
+
+            return SQLARBackend()
+        elif backend_name == "zip":
+            from .backends.zip_backend import ZipBackend
+
+            return ZipBackend()
+        elif backend_name == "tar":
+            from .backends.tar_backend import TarBackend
+
+            return TarBackend()
+        else:
+            raise ValueError(
+                f"Unsupported backend: {backend_name}. Supported backends: ['auto', 'directory', 'sqlar', 'zip', 'tar']."
+            )
     
     def save(
         self, 
@@ -768,46 +920,27 @@ class RichFile:
         path = str(path)
         fn_make_path_tmp  = lambda path: path + '.tmp'
         fn_make_path_lock = lambda path: path + '.lock'
+        backend_impl = self._get_backend_impl(
+            path=path,
+            for_save=True,
+        )
         with SafeSaver(
             path_target=path,
             path_temp=fn_make_path_tmp(path),
             path_lock=fn_make_path_lock(path),
             **kwargs_safe_saver,
         ) as path_temp:
-            save_object(
+            backend_impl.save(
+                richfile=self,
                 obj=obj,
                 path=path_temp,
-                type_lookup=self.type_lookup,
                 check=check,
                 overwrite=overwrite,
                 name_dict_items=name_dict_items,
+                save_type_lookup=save_type_lookup,
             )
-            
-        if save_type_lookup:
-            ## Make the type_lookup table a file in the outermost directory
-            type_lookup = copy.deepcopy(self.type_lookup.properties)
-            ### Convert the functions and classes into strings
-            for prop in type_lookup:
-                prop["function_load"] = inspect.getsource(prop["function_load"])
-                prop["function_save"] = inspect.getsource(prop["function_save"])
-            
-                prop["object_class"] = str(prop["object_class"])
 
-            ## If the richfile is a directory, save the type lookup table as a file in the outermost directory
-            if Path(path).is_dir():
-                ## Save as a .json file
-                path_type_lookup = str(Path(path) / FILENAME_TYPELOOKUP)
-                with SafeSaver(
-                    path_target=path_type_lookup,
-                    path_temp=fn_make_path_tmp(path_type_lookup),
-                    path_lock=fn_make_path_lock(path_type_lookup),
-                    **kwargs_safe_saver,
-                ) as path_temp:
-                    save_json(
-                        obj=type_lookup,
-                        path=path_temp,
-                        indent=JSON_INDENT,
-                    )
+        self._archive_index_cache = {}
                 
         return self
     
@@ -822,54 +955,12 @@ class RichFile:
         check = self.check if check is None else check
         if (path is None) or (not isinstance(check, bool)):
             raise ValueError("`path` [str, Path] and `check` [bool] must be specified.")
-        
-        ## Look for a metadata file in the directory
-        ### If there isn't one, assume it is the outer directory and load as a folder
-        if not (Path(path).parent / FILENAME_METADATA).exists():
-            ## If the path is a directory, load it as a folder
-            if Path(path).is_dir():
-                ## Look for the type within the metadata file within the directory
-                if not (Path(path) / FILENAME_METADATA).exists():
-                    raise FileNotFoundError(f"Metadata file {FILENAME_METADATA} not found in directory {path}.")
-                metadata_dir = load_folder_metadata(path_dir=path, check=check)
-                metadata_obj = {
-                    "type": metadata_dir["type"],
-                    "library": metadata_dir["library"],
-                    "version": metadata_dir["version"],
-                    "index": 0,
-                }
-                return load_element(
-                    path=path,
-                    metadata=metadata_obj,
-                    type_lookup=type_lookup,
-                    check=check,
-                )
-            ## If the path is a file, then it is missing a metadata file. Try to load it using object properties
-            elif Path(path).is_file():
-                props = type_lookup[type(Path(path).suffix)]
-                metadata_obj = {
-                    "type": props["type_name"],
-                    "library": props["library"],
-                    "version": _get_library_version(library=props["library"]),
-                    "index": 0,
-                }
-                return load_element(
-                    path=path,
-                    metadata=metadata_obj,
-                    type_lookup=type_lookup,
-                    check=check,
-                )
-            else:
-                raise FileNotFoundError(f"Path {path} not found.")
-        else:
-            metadata_folder = load_folder_metadata(path_dir=str(Path(path).parent), check=check)
-            metadata_element = metadata_folder["elements"][Path(path).name]
-            return load_element(
-                path=path,
-                metadata=metadata_element,
-                type_lookup=type_lookup,
-                check=check,
-            )
+        return self._get_backend_impl(path=path).load(
+            richfile=self,
+            path=path,
+            type_lookup=type_lookup,
+            check=check,
+        )
 
     def register_type(
         self, 
@@ -980,52 +1071,42 @@ class RichFile:
         
         self.params_save[type_name] = kwargs
 
-    def get_metadata(self, path_dir: Union[str, Path]) -> Dict:
+    def get_metadata(self, path_dir: Optional[Union[str, Path]] = None) -> Dict:
         """
-        Retrieves the metadata from the specified directory.
+        Retrieves metadata for a container path.
         """
-        return load_folder_metadata(path_dir=path_dir, check=self.check)
+        path_dir = self.path if path_dir is None else path_dir
+        return self._get_backend_impl(path=path_dir).get_metadata(
+            richfile=self,
+            path_dir=path_dir,
+        )
 
-    def list_elements(self, path_dir: Union[str, Path]) -> List[str]:
+    def list_elements(self, path_dir: Optional[Union[str, Path]] = None) -> List[str]:
         """
-        Lists the elements in the specified directory.
+        Lists child elements under a container path.
         """
-        metadata = load_folder_metadata(path_dir=path_dir, check=self.check)
-        return list(metadata['elements'].keys())
+        path_dir = self.path if path_dir is None else path_dir
+        return self._get_backend_impl(path=path_dir).list_elements(
+            richfile=self,
+            path_dir=path_dir,
+        )
 
     def get_type_info(self, type_name: str) -> Dict:
         """
         Retrieves the type information for a given type name.
         """
-        return self.type_lookup.get(type_name, {})
+        if type_name in self.type_lookup:
+            return self.type_lookup[type_name]
+        return {}
 
     def view_directory_tree(self, path: Optional[Union[str, Path]] = None) -> None:
         """
-        Prints a tree structure of the directory.
-        Uses the metadata to determine the structure.
+        Print a tree structure with filenames and element types.
         """
-        path = self.path if path is None else path
-        if path is None:
-            raise ValueError("`path` [str, Path] must be specified.")
-        
-        def _view_tree(path, level=0):
-            metadata = self.get_metadata(path)
-            for name, value in metadata['elements'].items():
-                print("|   " * level + "├── " + f"{name} ({value['type']})")
-                if value['type'] in ["list", "tuple", "set", "frozenset", "dict", "dict_item"]:
-                    _view_tree(path=str(Path(path) / name), level=level+1)
-            print("|   " * level)
-
-        if Path(path).is_dir():
-            print(f"Viewing tree structure of richfile at path: {path} ({self.get_metadata(path)['type']})")
-            _view_tree(path)
-        elif Path(path).is_file():
-            metadata_folder = load_folder_metadata(path_dir=str(Path(path).parent), check=self.check)
-            name_element = Path(path).name
-            metadata_element = metadata_folder["elements"][name_element]
-            print(f"Viewing element at path: {path} ({metadata_element['type']})")
-        else:
-            raise FileNotFoundError(f"Path {path} not found.")
+        return self._get_backend_impl(path=path).view_directory_tree(
+            richfile=self,
+            path=path,
+        )
     
     def view_tree(
         self, 
@@ -1033,52 +1114,13 @@ class RichFile:
         show_filenames: bool = False,
     ) -> None:
         """
-        Prints a tree structure of the directory.
-        If a dict item has a string key, it will be printed as a key-value pair.
-        List, tuple, set, and frozenset items will be printed as a list of items.
+        Print a semantic tree where dict entries are shown as key-value entries.
         """
-        sf = show_filenames
-        path = self.path if path is None else path
-        if path is None:
-            raise ValueError("`path` [str, Path] must be specified.")
-        
-        def _view_tree(path, level=0):
-            metadata = self.get_metadata(path)
-            for name, value in metadata['elements'].items():
-                if value['type'] == "dict_item":
-                    metadata_item = self.get_metadata(str(Path(path) / name))
-                    names_meta_sorted = _sort_element_names_by_index(metadata=metadata_item)
-                    ## The other element should be the value
-                    if len(names_meta_sorted) != 2:
-                        raise ValueError("DictItem must contain exactly 2 elements: key='0.json' and value=another element.")
-                    name_key, name_value = names_meta_sorted
-                    metadata_key = metadata_item['elements'][name_key]
-                    metadata_value = metadata_item['elements'][name_value]
-                    key = load_element(
-                        path=str(Path(path) / name / name_key),
-                        metadata=metadata_key,
-                        type_lookup=self.type_lookup,
-                    )
-                    print("|    " * level + "├── " + f"'{key}': {(name_value if sf else '')}  ({metadata_value['type']})")
-                    if metadata_value['type'] in ["list", "tuple", "set", "dict", "dict_item"]:
-                        _view_tree(path=str(Path(path) / name / name_value), level=level+1)
-                elif value['type'] in ["list", "tuple", "set", "dict"]:
-                    print("|    " * level + "├── " + f"{(name if sf else '')}  ({value['type']})")
-                    _view_tree(path=str(Path(path) / name), level=level+1)
-                else:
-                    print("|    " * level + "├── " + f"{(name if sf else '')}  ({value['type']})")
-            print("|    " * level)
-
-        if Path(path).is_dir():
-            print(f"Path: {path} ({self.get_metadata(path)['type']})")
-            _view_tree(path)
-        elif Path(path).is_file():
-            metadata_folder = load_folder_metadata(path_dir=str(Path(path).parent), check=self.check)
-            name_element = Path(path).name
-            metadata_element = metadata_folder["elements"][name_element]
-            print(f"Path: {path} ({metadata_element['type']})")
-        else:
-            raise FileNotFoundError(f"Path {path} not found.")
+        return self._get_backend_impl(path=path).view_tree(
+            richfile=self,
+            path=path,
+            show_filenames=show_filenames,
+        )
 
     def get_metadata_tree(
         self,
@@ -1086,42 +1128,39 @@ class RichFile:
     ):
         """
         Return a hierarchical dictionary containing the metadata for the entire
-        directory tree.
+        backend tree.
         """
-        path = self.path if path is None else path
-        if path is None:
-            raise ValueError("`path` [str, Path] must be specified.")
-        
-        def _get_metadata_tree(path):
-            metadata = self.get_metadata(path)
-            out = {
-                "metadata": metadata,
-                "elements": {},
-            }
-            for name, value in metadata['elements'].items():
-                if value['type'] in ["list", "tuple", "set", "frozenset", "dict", "dict_item"]:
-                    out["elements"][name] = _get_metadata_tree(str(Path(path) / name))
-                else:
-                    out["elements"][name] = value
-            return out
-
-        if Path(path).is_dir():
-            return _get_metadata_tree(path)
-        elif Path(path).is_file():
-            metadata_folder = load_folder_metadata(path_dir=str(Path(path).parent), check=self.check)
-            name_element = Path(path).name
-            metadata_element = metadata_folder["elements"][name_element]
-            return metadata_element
-        else:
-            raise FileNotFoundError(f"Path {path} not found.")
+        return self._get_backend_impl(path=path).get_metadata_tree(
+            richfile=self,
+            path=path,
+        )
         
     def __str__(self):
-        return f"RichFile(path={self.path}, check={self.check}, params_load={self.params_load}, params_save={self.params_save})"
+        backend_for_display = (
+            f"auto->{self._backend_auto_cached}"
+            if (self.backend == "auto") and (self._backend_auto_cached is not None)
+            else self.backend
+        )
+        path_internal = (
+            f", path_in_archive={self._path_in_archive}"
+            if self._path_in_archive != ""
+            else ""
+        )
+        return (
+            f"RichFile(path={self.path}, backend={backend_for_display}{path_internal}, "
+            f"check={self.check}, params_load={self.params_load}, params_save={self.params_save})"
+        )
 
     def __repr__(self):
         ## If the path exists and has a metadata file, show the metadata
         if self.path is not None:
-            if Path(self.path).exists() and (Path(self.path) / FILENAME_METADATA).exists():
+            backend_name = self.backend
+            if (backend_name == "auto") and Path(self.path).exists():
+                try:
+                    backend_name = self._resolve_backend_name(path=self.path)
+                except Exception:
+                    backend_name = self.backend
+            if Path(self.path).exists() and (backend_name == "directory") and (Path(self.path) / FILENAME_METADATA).exists():
                 metadata = self.get_metadata(self.path)
                 self.view_tree()
 
@@ -1129,69 +1168,16 @@ class RichFile:
     
     ## Item retrieval by key or index
     def __getitem__(self, key):
-        
-        ## Load dict items by key
-        if isinstance(key, str):
-            metadata = self.get_metadata(self.path)
-            ## Confirm that path is a dict
-            if metadata['type'] != "dict":
-                raise ValueError("Path must be a dict to load by key.")
-            ## Find filename matching a dict_item with a str as a key matching the input key
-            names_meta_sorted = _sort_element_names_by_index(metadata=metadata)
-            for name in names_meta_sorted:
-                ## Check if the key is a string by loading the dict_item metadata
-                metadata_item = self.get_metadata(str(Path(self.path) / name))
-                if (not (metadata['elements'][name]['type'] == "dict_item")):
-                    raise ValueError(f"Found element with type {metadata['elements'][name]['type']}. Expected 'dict_item'.")
-                if not (metadata_item['type'] == "dict_item"):
-                    raise ValueError(f"Found element with type {metadata_item['type']}. Expected 'dict_item'.")
-                if not len(metadata_item['elements']) == 2:
-                    raise ValueError("DictItem must contain exactly 2 elements: key and value.")
-                names_meta_sorted_item = _sort_element_names_by_index(metadata=metadata_item)
-                name_key, name_value = names_meta_sorted_item
-                if metadata_item['elements'][name_key]['type'] == "str":
-                    key_loaded = load_element(
-                        path=str(Path(self.path) / name / name_key),
-                        metadata=metadata_item['elements'][name_key],
-                        type_lookup=self.type_lookup,
-                    )
-                    if key_loaded == key:
-                        ## return a RichFile object at the path of the value
-                        out = copy.deepcopy(self)
-                        out.path = str(Path(self.path) / name / name_value)
-                        return out
-                        
-        ## Load list or tuple items by index
-        elif isinstance(key, int):
-            metadata = self.get_metadata(self.path)
-            ## Confirm that path is a list or tuple
-            if metadata['type'] not in ["list", "tuple"]:
-                raise ValueError("Path must be a list or tuple to load by index.")
-            ## Find filename of the metadata index matching the input key
-            for name, value in metadata['elements'].items():
-                if value['index'] == key:
-                    ## return a RichFile object at the path of the element
-                    out = copy.deepcopy(self)
-                    out.path = str(Path(self.path) / name)
-                    return out
-        else:
-            raise ValueError("__getitem__ only supports str and int keys.")
-        
-        raise KeyError(f"Key {key} not found.")
+        return self._get_backend_impl(path=self.path).getitem(
+            richfile=self,
+            key=key,
+        )
     
     def keys(self):
         """
         Returns a list of keys in the directory.
         """
-        try:
-            metadata = self.get_metadata(self.path)
-            names_elements_raw = list(metadata['elements'].keys())
-            names_elements = ['.'.join(name.split('.')[:-1]) for name in names_elements_raw]
-            return names_elements
-        except FileNotFoundError:
-            return []
-        except Exception as e:
-            warnings.warn(f"Path element failed to load metadata or doesn't have .keys() method. Error: {e}")
+        return self._get_backend_impl(path=self.path).keys(richfile=self)
     
 
 def delete_file_or_folder(path: Union[str, Path]) -> None:
