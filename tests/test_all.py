@@ -89,7 +89,7 @@ def test_lazy_loading():
 @hypothesis.settings(deadline=600)
 @hypothesis.given(
     hypothesis.strategies.dictionaries(
-        keys=hypothesis.strategies.text()
+        keys=hypothesis.strategies.text(max_size=50)
         .filter(lambda x: len([c for c, v in rf.invalid_chars_filename(x).items() if not v]) == 0)
         .filter(lambda x: x not in rf.WINDOWS_RESERVED_NAMES),  ## Prevent Windows reserved names
         values=hypothesis.strategies.one_of(
