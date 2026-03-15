@@ -58,11 +58,16 @@ def _copy_directory_tree(path_source: Path, path_target: Path) -> None:
     """
     src = path_source.resolve()
     tgt = path_target.resolve()
-    if tgt == src or str(tgt).startswith(str(src) + "/"):
+    try:
+        tgt.relative_to(src)
         raise ValueError(
             f"Target path must not be inside source path. "
             f"Source: {src}, Target: {tgt}"
         )
+    except ValueError as e:
+        if "Target path must not be inside" in str(e):
+            raise
+        pass  # relative_to raised ValueError — paths are unrelated, which is what we want
     path_target.mkdir(parents=True, exist_ok=True)
     for path_item in sorted(path_source.rglob("*")):
         path_relative = path_item.relative_to(path_source)
