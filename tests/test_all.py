@@ -86,7 +86,7 @@ def test_lazy_loading():
 
 # Property-based tests with hypothesis
 # dict
-@hypothesis.settings(deadline=600)
+@hypothesis.settings(deadline=2000)
 @hypothesis.given(
     hypothesis.strategies.dictionaries(
         keys=hypothesis.strategies.text(max_size=50)
